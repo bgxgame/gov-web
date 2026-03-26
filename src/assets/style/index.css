@@ -5,7 +5,10 @@ html, body, #app {
     padding: 0;
     font-family: "Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "微软雅黑", Arial, sans-serif;
     -webkit-font-smoothing: antialiased;
+    /* 关键修改：禁止最外层滚动条 */
+    overflow: hidden; 
 }
+
 
 /* 自定义一些全局颜色变量 */
 :root {

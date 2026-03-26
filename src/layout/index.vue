@@ -1,124 +1,187 @@
 <template>
-  <el-container class="layout-container">
-    <!-- 1. 左侧菜单栏 -->
-    <el-aside width="220px" class="aside">
-      <div class="logo">信创政务系统</div>
-      <el-menu
-        :default-active="$route.path"
-        class="el-menu-vertical"
-        background-color="#304156"
-        text-color="#bfcbd9"
-        active-text-color="#409EFF"
-        router
-      >
-        <el-menu-item index="/dashboard">
-          <el-icon><HomeFilled /></el-icon>
-          <span>首页</span>
-        </el-menu-item>
-
-        <el-sub-menu index="project">
-          <template #title>
-            <el-icon><Management /></el-icon>
-            <span>工程管理</span>
-          </template>
-          <el-menu-item index="/project/manage">项目管理</el-menu-item>
-          <el-menu-item index="/project/engineering">工程管理</el-menu-item>
-        </el-sub-menu>
-
-        <el-sub-menu index="settings">
-          <template #title>
-            <el-icon><Setting /></el-icon>
-            <span>设置</span>
-          </template>
-          <el-menu-item index="/system/user">用户管理</el-menu-item>
-          <el-menu-item index="/system/dept">部门管理</el-menu-item>
-          <el-menu-item index="/system/role">角色管理</el-menu-item>
-        </el-sub-menu>
-      </el-menu>
-    </el-aside>
-
-    <el-container>
-      <!-- 2. 顶部导航 -->
-      <el-header class="header">
-        <div class="header-left">
-          <span>{{ $route.meta.title }}</span>
+  <el-container class="layout-wrapper">
+    <!-- 左侧侧边栏 -->
+    <el-aside :width="isCollapse ? '64px' : '220px'" class="aside-container">
+      <div class="aside-content">
+        <!-- 顶部 Logo 和 折叠按钮 -->
+        <div class="aside-logo">
+          <span v-if="!isCollapse">信创政务系统</span>
+          <el-icon class="toggle-icon" @click="isCollapse = !isCollapse">
+            <Expand v-if="isCollapse" />
+            <Fold v-else />
+          </el-icon>
         </div>
-        <div class="header-right">
-          <el-dropdown @command="handleCommand">
-            <span class="user-info">
-              管理员 <el-icon><ArrowDown /></el-icon>
-            </span>
+
+        <!-- 中间菜单区 -->
+        <el-menu
+          :default-active="$route.path"
+          class="aside-menu"
+          background-color="#304156"
+          text-color="#bfcbd9"
+          active-text-color="#409EFF"
+          :collapse="isCollapse"
+          :collapse-transition="false"
+          router
+        >
+          <el-menu-item index="/dashboard">
+            <el-icon><HomeFilled /></el-icon>
+            <template #title>首页</template>
+          </el-menu-item>
+
+          <el-sub-menu index="project">
+            <template #title>
+              <el-icon><Management /></el-icon>
+              <span>工程管理</span>
+            </template>
+            <el-menu-item index="/project/manage">项目管理</el-menu-item>
+            <el-menu-item index="/project/engineering">工程进度</el-menu-item>
+          </el-sub-menu>
+
+          <el-sub-menu index="settings">
+            <template #title>
+              <el-icon><Setting /></el-icon>
+              <span>系统设置</span>
+            </template>
+            <el-menu-item index="/system/user">用户管理</el-menu-item>
+            <el-menu-item index="/system/dept">部门管理</el-menu-item>
+            <el-menu-item index="/system/role">角色管理</el-menu-item>
+          </el-sub-menu>
+        </el-menu>
+
+        <!-- 底部用户信息与下拉菜单 -->
+        <div class="aside-footer">
+          <el-dropdown trigger="click" placement="right-end">
+            <div class="user-profile-trigger">
+              <el-avatar :size="32" icon="UserFilled" />
+              <span class="username" v-if="!isCollapse">管理员</span>
+            </div>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item command="logout">退出登录</el-dropdown-item>
+                <el-dropdown-item @click="handleLogout">
+                  <el-icon><SwitchButton /></el-icon>
+                  <span>退出登录</span>
+                </el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
         </div>
-      </el-header>
+      </div>
+    </el-aside>
 
-      <!-- 3. 业务内容区 -->
-      <el-main class="main">
-        <router-view />
-      </el-main>
-    </el-container>
+    <!-- 右侧内容区 -->
+    <el-main class="main-container">
+      <router-view />
+    </el-main>
   </el-container>
 </template>
 
 <script setup>
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessageBox } from 'element-plus'
+import { ElMessageBox, ElMessage } from 'element-plus'
 
+const isCollapse = ref(false)
 const router = useRouter()
 
-const handleCommand = (command) => {
-  if (command === 'logout') {
-    ElMessageBox.confirm('确定要退出系统吗?', '提示', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'warning'
-    }).then(() => {
-      localStorage.removeItem('token')
-      router.push('/login')
-    })
-  }
+const handleLogout = () => {
+  ElMessageBox.confirm('确定要退出系统吗?', '提示', {
+    confirmButtonText: '确定',
+    cancelButtonText: '取消',
+    type: 'warning'
+  }).then(() => {
+    localStorage.removeItem('token')
+    ElMessage.success('已退出登录')
+    router.push('/login')
+  })
 }
 </script>
 
 <style scoped>
-.layout-container {
+.layout-wrapper {
   height: 100vh;
+  width: 100vw;
+  overflow: hidden;
 }
-.aside {
+
+.aside-container {
   background-color: #304156;
   transition: width 0.3s;
+  display: flex;
+  flex-direction: column;
 }
-.logo {
+
+.aside-content {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.aside-logo {
   height: 60px;
-  line-height: 60px;
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
   color: #fff;
-  font-size: 18px;
   font-weight: bold;
   background-color: #2b2f3a;
+  overflow: hidden;
 }
-.header {
-  background-color: #fff;
-  border-bottom: 1px solid #e6e6e6;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0 20px;
-}
-.user-info {
+
+.toggle-icon {
   cursor: pointer;
+  font-size: 20px;
+  color: #bfcbd9;
+}
+
+.toggle-icon:hover {
+  color: #fff;
+}
+
+.aside-menu {
+  flex: 1; /* 占据剩余空间 */
+  border-right: none;
+}
+
+/* 侧边栏底部样式修改 */
+.aside-footer {
+  border-top: 1px solid #3d4d66;
+  padding: 15px 0;
+  background-color: #2b2f3a;
+  display: flex;
+  justify-content: center;
+}
+
+.user-profile-trigger {
   display: flex;
   align-items: center;
+  padding: 5px 15px;
+  cursor: pointer;
+  color: #fff;
+  border-radius: 4px;
+  transition: background 0.3s;
 }
-.main {
+
+.user-profile-trigger:hover {
+  background-color: #3d4d66;
+}
+
+.username {
+  margin-left: 10px;
+  font-size: 14px;
+}
+
+.main-container {
+  padding: 0;
   background-color: #f0f2f5;
+  position: relative;
+  height: 100vh;
+  overflow: hidden; /* 核心修复：防止内容溢出产生滚动条 */
 }
-.el-menu {
-  border-right: none;
+
+/* 解决下拉菜单文字颜色 */
+:deep(.el-dropdown-menu__item) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 </style>

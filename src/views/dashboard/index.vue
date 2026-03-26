@@ -6,7 +6,9 @@
                     <template #header>
                         <div class="map-header">
                             <div class="header-left">
-                                <el-icon style="vertical-align: middle; margin-right: 5px;"><Location /></el-icon>
+                                <el-icon style="vertical-align: middle; margin-right: 5px;">
+                                    <Location />
+                                </el-icon>
                                 <span style="font-weight: bold;">项目分布地理看板</span>
                             </div>
                             <div class="header-right">
@@ -17,7 +19,7 @@
                             </div>
                         </div>
                     </template>
-                    <!-- 关键修复：给 map 容器一个计算后的明确高度 -->
+                    <!-- 关键修复：高度改用 calc 计算百分比 -->
                     <div id="project-map" class="chart-div"></div>
                 </el-card>
             </el-col>
@@ -44,7 +46,7 @@ const initMap = async (adcode, mapName) => {
 
         // 获取后端项目坐标数据
         const backendRes = await request.get('/project/map/list', {
-            params: { province: '陕西省' } 
+            params: { province: '陕西省' }
         })
 
         console.log('后端原始数据：', backendRes.data)
@@ -65,7 +67,7 @@ const initMap = async (adcode, mapName) => {
                 trigger: 'item',
                 backgroundColor: 'rgba(255, 255, 255, 0.9)',
                 formatter: (params) => {
-                    if(params.seriesType === 'effectScatter') {
+                    if (params.seriesType === 'effectScatter') {
                         return `<div style="padding:8px">
                                     <b style="color:#409EFF">${params.name}</b><br/>
                                     地址：${params.value[3] || '暂无'}<br/>
@@ -152,30 +154,35 @@ onUnmounted(() => {
 .dashboard-container {
     padding: 0;
     margin: 0;
-    /* 容器占满屏幕剩余高度 */
-    height: calc(100vh - 100px); 
+    /* 核心修复：改为 100% 避免超出父级 el-main 的视口高度 */
+    height: 100%;
+    width: 100%;
     overflow: hidden;
 }
 
 .map-card {
     height: 100%;
+    border: none;
+    display: flex;
+    flex-direction: column;
 }
 
-/* 核心修复：直接计算 map 容器的高度 */
 .chart-div {
     width: 100%;
-    /* 高度 = 容器高度 - card header的高度(约60px) */
-    height: calc(100vh - 160px); 
+    /* 核心修复：改用相对于容器的百分比计算，减去 header 的高度 */
+    height: calc(100vh - 55px);
+}
+
+/* 让 ECharts 铺满卡片内容区 */
+:deep(.el-card__body) {
+    padding: 0 !important;
+    flex: 1;
+    overflow: hidden;
 }
 
 .map-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-}
-
-/* 确保 el-card 的 body 部分不产生滚动条 */
-:deep(.el-card__body) {
-    padding: 0 !important;
 }
 </style>
