@@ -273,11 +273,12 @@ function statusTagType(status) {
 }
 
 function canSubmit(row) {
-  return canEdit(row) && Number(row.status) === 0
+  return canEdit(row)
 }
 
 function canEdit(row) {
-  if (Number(row.status) !== 0) return false
+  const status = row.status === null || row.status === undefined ? null : Number(row.status)
+  if (!(status === null || status === 0 || status === 3)) return false
   if (isAdmin) return true
   const currentUserId = String(sessionStore.userInfo?.userId || '')
   const currentDeptId = String(sessionStore.userInfo?.deptId || '')
@@ -290,7 +291,7 @@ function canEdit(row) {
 }
 
 function canDelete(row) {
-  return canEdit(row) && Number(row.status) === 0
+  return canEdit(row)
 }
 
 async function fetchTableData() {
@@ -414,17 +415,21 @@ async function handleDetail(row) {
 }
 
 async function handleSubmit(row) {
-  await ElMessageBox.confirm(`确认提交项目《${row.projectName}》进入审批流吗？`, '提交确认', {
-    type: 'warning'
-  })
-  const detailRes = await getProjectDetail(String(row.id))
-  if (!detailRes.data) {
-    ElMessage.warning('项目详情不存在，无法提交')
-    return
+  try {
+    await ElMessageBox.confirm(`确认提交项目《${row.projectName}》进入审批流吗？`, '提交确认', {
+      type: 'warning'
+    })
+    const detailRes = await getProjectDetail(String(row.id))
+    if (!detailRes.data) {
+      ElMessage.warning('项目详情不存在，无法提交')
+      return
+    }
+    await submitProject(detailRes.data)
+    ElMessage.success('提交审批成功')
+    fetchTableData()
+  } catch (error) {
+    // 取消提交不提示错误
   }
-  await submitProject(detailRes.data)
-  ElMessage.success('提交审批成功')
-  fetchTableData()
 }
 
 async function handleDelete(row) {
@@ -432,10 +437,14 @@ async function handleDelete(row) {
     ElMessage.warning('项目ID不存在，无法删除')
     return
   }
-  await ElMessageBox.confirm(`确认删除项目《${row.projectName}》吗？`, '删除确认', { type: 'warning' })
-  await deleteProject(String(row.id))
-  ElMessage.success('删除成功')
-  fetchTableData()
+  try {
+    await ElMessageBox.confirm(`确认删除项目《${row.projectName}》吗？`, '删除确认', { type: 'warning' })
+    await deleteProject(String(row.id))
+    ElMessage.success('删除成功')
+    fetchTableData()
+  } catch (error) {
+    // 取消删除不提示错误
+  }
 }
 
 async function loadUserOptions() {

@@ -68,16 +68,31 @@
       <router-view />
     </el-main>
   </el-container>
+
+  <el-dialog
+    v-model="logoutDialogVisible"
+    title="退出登录"
+    width="420px"
+    :close-on-click-modal="false"
+    append-to-body
+  >
+    <div class="logout-tip">确定退出当前账号吗？</div>
+    <template #footer>
+      <el-button @click="logoutDialogVisible = false">取消</el-button>
+      <el-button type="primary" @click="confirmLogout">确定退出</el-button>
+    </template>
+  </el-dialog>
 </template>
 
 <script setup>
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessageBox, ElMessage } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Expand, Fold, HomeFilled, Management, Setting, SwitchButton, UserFilled } from '@element-plus/icons-vue'
 import { useSessionStore } from '../stores/session'
 
 const isCollapse = ref(false)
+const logoutDialogVisible = ref(false)
 const router = useRouter()
 const sessionStore = useSessionStore()
 
@@ -86,15 +101,14 @@ const canVisitMenu = (menuKey) => sessionStore.hasMenu(menuKey)
 const hasSystemMenus = computed(() => sessionStore.hasAnyMenu(['system:user', 'system:dept', 'system:role']))
 
 const handleLogout = () => {
-  ElMessageBox.confirm('确定要退出系统吗?', '提示', {
-    confirmButtonText: '确定',
-    cancelButtonText: '取消',
-    type: 'warning'
-  }).then(async () => {
-    await sessionStore.logout()
-    ElMessage.success('已退出登录')
-    router.push('/login')
-  })
+  logoutDialogVisible.value = true
+}
+
+const confirmLogout = async () => {
+  await sessionStore.logout()
+  logoutDialogVisible.value = false
+  ElMessage.success('已退出登录')
+  router.push('/login')
 }
 </script>
 
@@ -183,5 +197,10 @@ const handleLogout = () => {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.logout-tip {
+  font-size: 14px;
+  color: #303133;
 }
 </style>

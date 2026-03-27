@@ -76,7 +76,7 @@
             clearable
             placeholder="请选择部门"
             style="width: 100%"
-            :disabled="isDeptLeader"
+            :disabled="isDeptScopedManager"
           >
             <el-option v-for="dept in deptOptions" :key="dept.id" :label="dept.label" :value="dept.id" />
           </el-select>
@@ -112,7 +112,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useSessionStore } from '../../stores/session'
 import {
@@ -133,9 +133,9 @@ const roleOptions = ref([])
 
 const sessionStore = useSessionStore()
 const isAdmin = sessionStore.hasRole('admin')
-const isDeptLeader = sessionStore.hasRole('dept_leader') && !isAdmin
-const canManageUsers = isAdmin || isDeptLeader
-const currentDeptId = sessionStore.userInfo?.deptId
+const canManageUsers = sessionStore.hasMenu('system:user')
+const isDeptScopedManager = !isAdmin && canManageUsers
+const currentDeptId = sessionStore.userInfo?.deptId || undefined
 
 const queryForm = reactive({
   username: '',
@@ -161,7 +161,7 @@ function createEmptyForm() {
     id: undefined,
     username: '',
     realName: '',
-    deptId: isDeptLeader ? currentDeptId : undefined,
+    deptId: isDeptScopedManager ? currentDeptId : undefined,
     phone: '',
     status: 1,
     roleIds: [],
@@ -171,6 +171,7 @@ function createEmptyForm() {
 
 function canEditUser(row) {
   if (isAdmin) return true
+  if (!isDeptScopedManager) return false
   return row.deptId && currentDeptId && String(row.deptId) === String(currentDeptId)
 }
 
@@ -261,7 +262,7 @@ async function handleSave() {
   try {
     if (dialog.mode === 'create') {
       const payload = { ...dialog.form }
-      if (isDeptLeader && !payload.deptId) {
+      if (isDeptScopedManager && !payload.deptId) {
         payload.deptId = currentDeptId
       }
       const res = await addUser(payload)
