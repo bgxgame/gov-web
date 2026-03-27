@@ -101,12 +101,26 @@
           </el-col>
           <el-col :span="12">
             <el-form-item label="负责人">
-              <el-input v-model="editDialog.form.leaderName" />
+              <el-select
+                v-model="editDialog.form.leaderUserId"
+                filterable
+                clearable
+                placeholder="请选择负责人"
+                style="width: 100%"
+                @change="handleLeaderChange"
+              >
+                <el-option
+                  v-for="user in userOptions"
+                  :key="user.id"
+                  :label="`${user.realName || user.username} (${user.username})`"
+                  :value="user.id"
+                />
+              </el-select>
             </el-form-item>
           </el-col>
           <el-col :span="12">
             <el-form-item label="联系电话">
-              <el-input v-model="editDialog.form.leaderPhone" />
+              <el-input v-model="editDialog.form.leaderPhone" placeholder="可自动回填或手工输入" />
             </el-form-item>
           </el-col>
           <el-col :span="24">
@@ -122,8 +136,8 @@
       </template>
     </el-dialog>
 
-    <el-drawer v-model="detailDrawer.visible" title="项目详情" size="520px">
-      <el-descriptions :column="1" border>
+    <el-dialog v-model="detailDialog.visible" title="项目详情" width="72%">
+      <el-descriptions :column="2" border v-loading="detailDialog.loading">
         <el-descriptions-item label="项目名称">{{ detailDrawer.data.projectName || '-' }}</el-descriptions-item>
         <el-descriptions-item label="项目编号">{{ detailDrawer.data.projectCode || '-' }}</el-descriptions-item>
         <el-descriptions-item label="状态">
@@ -140,13 +154,14 @@
         </el-descriptions-item>
         <el-descriptions-item label="项目描述">{{ detailDrawer.data.description || '-' }}</el-descriptions-item>
       </el-descriptions>
-    </el-drawer>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { getUserSimple } from '../../api/system'
 import {
   addProject,
   getProjectDetail,
@@ -183,9 +198,15 @@ const editDialog = reactive({
   saving: false,
   form: createEmptyForm()
 })
+const userOptions = ref([])
 
 const detailDrawer = reactive({
+  data: {}
+})
+
+const detailDialog = reactive({
   visible: false,
+  loading: false,
   data: {}
 })
 
@@ -200,6 +221,7 @@ function createEmptyForm() {
     district: '',
     longitude: '',
     latitude: '',
+    leaderUserId: undefined,
     leaderName: '',
     leaderPhone: '',
     description: ''
@@ -259,6 +281,11 @@ function openCreateDialog() {
 }
 
 function openEditDialog(row) {
+  const matchedUser = userOptions.value.find(
+    (item) =>
+      (row.leaderName && (item.realName === row.leaderName || item.username === row.leaderName)) ||
+      (row.leaderPhone && item.phone === row.leaderPhone)
+  )
   editDialog.mode = 'edit'
   editDialog.form = {
     id: row.id,
@@ -268,13 +295,25 @@ function openEditDialog(row) {
     province: row.province || '',
     city: row.city || '',
     district: row.district || '',
-    longitude: row.longitude || '',
-    latitude: row.latitude || '',
+    longitude: row.longitude ?? '',
+    latitude: row.latitude ?? '',
+    leaderUserId: matchedUser?.id,
     leaderName: row.leaderName || '',
     leaderPhone: row.leaderPhone || '',
     description: row.description || ''
   }
   editDialog.visible = true
+}
+
+function handleLeaderChange(userId) {
+  const target = userOptions.value.find((item) => item.id === userId)
+  if (!target) {
+    return
+  }
+  editDialog.form.leaderName = target.realName || target.username
+  if (target.phone) {
+    editDialog.form.leaderPhone = target.phone
+  }
 }
 
 async function handleSave() {
@@ -287,6 +326,7 @@ async function handleSave() {
   try {
     const payload = {
       ...editDialog.form,
+      leaderUserId: undefined,
       longitude: editDialog.form.longitude === '' ? null : Number(editDialog.form.longitude),
       latitude: editDialog.form.latitude === '' ? null : Number(editDialog.form.latitude)
     }
@@ -305,9 +345,23 @@ async function handleSave() {
 }
 
 async function handleDetail(row) {
-  const res = await getProjectDetail(row.id)
-  detailDrawer.data = res.data || {}
-  detailDrawer.visible = true
+  if (!row?.id) {
+    ElMessage.warning('项目ID不存在，无法查看详情')
+    return
+  }
+  detailDialog.visible = true
+  detailDialog.loading = true
+  try {
+    const res = await getProjectDetail(row.id)
+    detailDrawer.data = res.data || {}
+    if (!res.data) {
+      ElMessage.warning('未找到该项目详情')
+    }
+  } catch (error) {
+    ElMessage.error('加载项目详情失败')
+  } finally {
+    detailDialog.loading = false
+  }
 }
 
 async function handleSubmit(row) {
@@ -321,8 +375,13 @@ async function handleSubmit(row) {
 }
 
 onMounted(() => {
-  fetchTableData()
+  Promise.all([fetchTableData(), loadUserOptions()])
 })
+
+async function loadUserOptions() {
+  const res = await getUserSimple()
+  userOptions.value = res.data || []
+}
 </script>
 
 <style scoped>

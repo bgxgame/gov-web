@@ -17,7 +17,7 @@
         <el-form-item>
           <el-button type="primary" @click="handleQuery">查询</el-button>
           <el-button @click="handleReset">重置</el-button>
-          <el-button type="success" @click="openCreateDialog">新增用户</el-button>
+          <el-button v-if="isAdmin" type="success" @click="openCreateDialog">新增用户</el-button>
         </el-form-item>
       </el-form>
     </el-card>
@@ -36,13 +36,14 @@
               inline-prompt
               active-text="启用"
               inactive-text="停用"
+              :disabled="!canEditUser(row)"
             />
           </template>
         </el-table-column>
         <el-table-column prop="createTime" label="创建时间" min-width="170" />
         <el-table-column label="操作" width="120" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click="openEditDialog(row)">编辑</el-button>
+            <el-button link type="primary" :disabled="!canEditUser(row)" @click="openEditDialog(row)">编辑</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -82,6 +83,11 @@
             <el-radio :label="0">停用</el-radio>
           </el-radio-group>
         </el-form-item>
+        <el-form-item v-if="isAdmin" label="角色">
+          <el-select v-model="dialog.form.roleIds" multiple clearable placeholder="请选择角色" style="width: 100%">
+            <el-option v-for="item in roleOptions" :key="item.id" :label="item.roleName" :value="item.id" />
+          </el-select>
+        </el-form-item>
         <el-form-item :label="dialog.mode === 'create' ? '初始密码' : '重置密码'">
           <el-input
             v-model="dialog.form.password"
@@ -101,11 +107,26 @@
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { addUser, getDeptTree, getUserPage, updateUser, updateUserStatus } from '../../api/system'
+import { useSessionStore } from '../../stores/session'
+import {
+  addUser,
+  getDeptTree,
+  getRoleAll,
+  getUserPage,
+  getUserRoles,
+  setUserRoles,
+  updateUser,
+  updateUserStatus
+} from '../../api/system'
 
 const loading = ref(false)
 const tableData = ref([])
 const deptOptions = ref([])
+const roleOptions = ref([])
+
+const sessionStore = useSessionStore()
+const isAdmin = sessionStore.hasRole('admin')
+const currentDeptId = sessionStore.userInfo?.deptId
 
 const queryForm = reactive({
   username: '',
@@ -131,11 +152,17 @@ function createEmptyForm() {
     id: undefined,
     username: '',
     realName: '',
-    deptId: undefined,
+    deptId: isAdmin ? undefined : currentDeptId,
     phone: '',
     status: 1,
+    roleIds: [],
     password: ''
   }
+}
+
+function canEditUser(row) {
+  if (isAdmin) return true
+  return row.deptId && row.deptId === currentDeptId
 }
 
 function flattenDeptTree(list, prefix) {
@@ -153,6 +180,12 @@ function flattenDeptTree(list, prefix) {
 async function loadDeptOptions() {
   const res = await getDeptTree()
   deptOptions.value = flattenDeptTree(res.data || [], '')
+}
+
+async function loadRoleOptions() {
+  if (!isAdmin) return
+  const res = await getRoleAll()
+  roleOptions.value = res.data || []
 }
 
 async function fetchTableData() {
@@ -191,7 +224,7 @@ function openCreateDialog() {
   dialog.visible = true
 }
 
-function openEditDialog(row) {
+async function openEditDialog(row) {
   dialog.mode = 'edit'
   dialog.form = {
     id: row.id,
@@ -200,9 +233,14 @@ function openEditDialog(row) {
     deptId: row.deptId,
     phone: row.phone || '',
     status: Number(row.status) === 1 ? 1 : 0,
+    roleIds: [],
     password: ''
   }
   dialog.visible = true
+  if (isAdmin) {
+    const roleRes = await getUserRoles(row.id)
+    dialog.form.roleIds = roleRes.data || []
+  }
 }
 
 async function handleSave() {
@@ -213,10 +251,22 @@ async function handleSave() {
   dialog.saving = true
   try {
     if (dialog.mode === 'create') {
-      await addUser(dialog.form)
+      const res = await addUser(dialog.form)
+      if (isAdmin && res.data?.userId) {
+        await setUserRoles({
+          userId: res.data.userId,
+          roleIds: dialog.form.roleIds || []
+        })
+      }
       ElMessage.success('新增用户成功')
     } else {
       await updateUser(dialog.form)
+      if (isAdmin) {
+        await setUserRoles({
+          userId: dialog.form.id,
+          roleIds: dialog.form.roleIds || []
+        })
+      }
       ElMessage.success('更新用户成功')
     }
     dialog.visible = false
@@ -236,7 +286,7 @@ async function handleStatusChange(row, enabled) {
 }
 
 onMounted(async () => {
-  await Promise.all([loadDeptOptions(), fetchTableData()])
+  await Promise.all([loadDeptOptions(), loadRoleOptions(), fetchTableData()])
 })
 </script>
 

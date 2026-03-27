@@ -42,6 +42,7 @@ import axios from 'axios'
 import { getProjectDetail, getProjectMapList } from '../../api/project'
 
 let chart = null
+let mapGeoJson = null
 
 const filters = reactive({
   province: '',
@@ -56,7 +57,8 @@ const detailDrawer = reactive({
 
 async function initMap() {
   const res = await axios.get('/map-data/610000.json')
-  echarts.registerMap('shaanxi', res.data)
+  mapGeoJson = res.data
+  echarts.registerMap('shaanxi', mapGeoJson)
 }
 
 async function loadScatterData() {
@@ -69,8 +71,9 @@ async function loadScatterData() {
 
   const scatterData = (res.data || [])
     .map((item) => {
-      const lng = Number(item.longitude)
-      const lat = Number(item.latitude)
+      const point = resolvePoint(item)
+      const lng = Number(point[0])
+      const lat = Number(point[1])
       return {
         name: item.projectName,
         value: [lng, lat, item.id, item.address]
@@ -114,6 +117,58 @@ async function loadScatterData() {
       }
     ]
   })
+}
+
+function normalizeRegionName(name) {
+  if (!name) return ''
+  return String(name).replace(/省|市|区|县|自治州|地区|特别行政区/g, '')
+}
+
+function resolvePoint(item) {
+  const rawLng = Number(item.longitude)
+  const rawLat = Number(item.latitude)
+  if (!Number.isNaN(rawLng) && !Number.isNaN(rawLat) && rawLng !== 0 && rawLat !== 0) {
+    return [rawLng, rawLat]
+  }
+
+  const cityCenterMap = {
+    西安: [108.9398, 34.3416],
+    宝鸡: [107.2373, 34.3619],
+    咸阳: [108.7051, 34.3334],
+    铜川: [108.945, 34.8967],
+    渭南: [109.5, 34.4999],
+    延安: [109.4897, 36.5853],
+    榆林: [109.7341, 38.2858],
+    汉中: [107.0286, 33.0777],
+    安康: [109.0293, 32.6903],
+    商洛: [109.9398, 33.8683]
+  }
+
+  const districtName = normalizeRegionName(item.district)
+  const cityName = normalizeRegionName(item.city)
+  const provinceName = normalizeRegionName(item.province)
+
+  if (mapGeoJson?.features?.length) {
+    const feature = mapGeoJson.features.find((f) => {
+      const featureName = normalizeRegionName(f?.properties?.name || f?.name)
+      return featureName === districtName || featureName === cityName
+    })
+    if (feature?.properties?.center?.length >= 2) {
+      return feature.properties.center
+    }
+    if (feature?.properties?.cp?.length >= 2) {
+      return feature.properties.cp
+    }
+  }
+
+  if (cityName && cityCenterMap[cityName]) {
+    return cityCenterMap[cityName]
+  }
+
+  if (provinceName === '陕西') {
+    return [108.95, 34.27]
+  }
+  return [108.95, 34.27]
 }
 
 async function openProjectDetail(projectId) {

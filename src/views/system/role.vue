@@ -1,5 +1,12 @@
 <template>
   <div class="app-container">
+    <el-alert
+      class="role-hint"
+      type="info"
+      :closable="false"
+      show-icon
+      title="菜单权限按角色编码生效：admin(全量菜单)、dept_leader(部门管理菜单)、user(基础业务菜单)"
+    />
     <el-card class="filter-card" shadow="never">
       <el-form :inline="true" :model="queryForm">
         <el-form-item label="角色名称">
@@ -173,6 +180,10 @@ onMounted(() => {
 <style scoped>
 .app-container {
   padding: 10px;
+}
+
+.role-hint {
+  margin-bottom: 10px;
 }
 
 .filter-card {

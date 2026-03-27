@@ -34,17 +34,17 @@
               <span>工程管理</span>
             </template>
             <el-menu-item index="/project/manage">项目管理</el-menu-item>
-            <el-menu-item index="/project/engineering">工程进度</el-menu-item>
+            <el-menu-item v-if="canVisit(['admin', 'dept_leader'])" index="/project/engineering">工程进度</el-menu-item>
           </el-sub-menu>
 
-          <el-sub-menu index="settings">
+          <el-sub-menu v-if="canVisit(['admin', 'dept_leader'])" index="settings">
             <template #title>
               <el-icon><Setting /></el-icon>
               <span>系统设置</span>
             </template>
             <el-menu-item index="/system/user">用户管理</el-menu-item>
             <el-menu-item index="/system/dept">部门管理</el-menu-item>
-            <el-menu-item index="/system/role">角色管理</el-menu-item>
+            <el-menu-item v-if="canVisit(['admin'])" index="/system/role">角色管理</el-menu-item>
           </el-sub-menu>
         </el-menu>
 
@@ -85,6 +85,7 @@ const isCollapse = ref(false)
 const router = useRouter()
 const sessionStore = useSessionStore()
 const displayName = computed(() => sessionStore.userInfo?.username || '管理员')
+const canVisit = (roles) => sessionStore.hasAnyRole(roles)
 
 const handleLogout = () => {
   ElMessageBox.confirm('确定要退出系统吗?', '提示', {
