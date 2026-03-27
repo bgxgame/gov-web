@@ -18,10 +18,11 @@
 <script setup>
 import { reactive } from 'vue'
 import { useRouter } from 'vue-router'
-import request from '../../utils/request'
 import { ElMessage } from 'element-plus'
+import { useSessionStore } from '../../stores/session'
 
 const router = useRouter()
+const sessionStore = useSessionStore()
 const loginForm = reactive({
   username: '',
   password: ''
@@ -29,9 +30,7 @@ const loginForm = reactive({
 
 const handleLogin = async () => {
   try {
-    const res = await request.post('/system/login', loginForm)
-    // 存储 Token (后端返回的 tokenValue)
-    localStorage.setItem('token', res.data.tokenValue)
+    await sessionStore.login(loginForm)
     ElMessage.success('登录成功')
     router.push('/dashboard') // 登录后跳转到首页
   } catch (error) {

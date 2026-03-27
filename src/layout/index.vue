@@ -1,9 +1,7 @@
-<template>
+﻿<template>
   <el-container class="layout-wrapper">
-    <!-- 左侧侧边栏 -->
     <el-aside :width="isCollapse ? '64px' : '220px'" class="aside-container">
       <div class="aside-content">
-        <!-- 顶部 Logo 和 折叠按钮 -->
         <div class="aside-logo">
           <span v-if="!isCollapse">信创政务系统</span>
           <el-icon class="toggle-icon" @click="isCollapse = !isCollapse">
@@ -12,7 +10,6 @@
           </el-icon>
         </div>
 
-        <!-- 中间菜单区 -->
         <el-menu
           :default-active="$route.path"
           class="aside-menu"
@@ -23,37 +20,36 @@
           :collapse-transition="false"
           router
         >
-          <el-menu-item index="/dashboard">
+          <el-menu-item v-if="canVisitMenu('dashboard:view')" index="/dashboard">
             <el-icon><HomeFilled /></el-icon>
             <template #title>首页</template>
           </el-menu-item>
 
-          <el-sub-menu index="project">
+          <el-sub-menu v-if="canVisitMenu('project:manage') || canVisitMenu('project:engineering')" index="project">
             <template #title>
               <el-icon><Management /></el-icon>
               <span>工程管理</span>
             </template>
-            <el-menu-item index="/project/manage">项目管理</el-menu-item>
-            <el-menu-item index="/project/engineering">工程进度</el-menu-item>
+            <el-menu-item v-if="canVisitMenu('project:manage')" index="/project/manage">项目管理</el-menu-item>
+            <el-menu-item v-if="canVisitMenu('project:engineering')" index="/project/engineering">工程进度</el-menu-item>
           </el-sub-menu>
 
-          <el-sub-menu index="settings">
+          <el-sub-menu v-if="hasSystemMenus" index="settings">
             <template #title>
               <el-icon><Setting /></el-icon>
               <span>系统设置</span>
             </template>
-            <el-menu-item index="/system/user">用户管理</el-menu-item>
-            <el-menu-item index="/system/dept">部门管理</el-menu-item>
-            <el-menu-item index="/system/role">角色管理</el-menu-item>
+            <el-menu-item v-if="canVisitMenu('system:user')" index="/system/user">用户管理</el-menu-item>
+            <el-menu-item v-if="canVisitMenu('system:dept')" index="/system/dept">部门管理</el-menu-item>
+            <el-menu-item v-if="canVisitMenu('system:role')" index="/system/role">角色管理</el-menu-item>
           </el-sub-menu>
         </el-menu>
 
-        <!-- 底部用户信息与下拉菜单 -->
         <div class="aside-footer">
           <el-dropdown trigger="click" placement="right-end">
             <div class="user-profile-trigger">
               <el-avatar :size="32" icon="UserFilled" />
-              <span class="username" v-if="!isCollapse">管理员</span>
+              <span class="username" v-if="!isCollapse">{{ displayName }}</span>
             </div>
             <template #dropdown>
               <el-dropdown-menu>
@@ -68,31 +64,51 @@
       </div>
     </el-aside>
 
-    <!-- 右侧内容区 -->
     <el-main class="main-container">
       <router-view />
     </el-main>
   </el-container>
+
+  <el-dialog
+    v-model="logoutDialogVisible"
+    title="退出登录"
+    width="420px"
+    :close-on-click-modal="false"
+    append-to-body
+  >
+    <div class="logout-tip">确定退出当前账号吗？</div>
+    <template #footer>
+      <el-button @click="logoutDialogVisible = false">取消</el-button>
+      <el-button type="primary" @click="confirmLogout">确定退出</el-button>
+    </template>
+  </el-dialog>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessageBox, ElMessage } from 'element-plus'
+import { ElMessage } from 'element-plus'
+import { Expand, Fold, HomeFilled, Management, Setting, SwitchButton, UserFilled } from '@element-plus/icons-vue'
+import { useSessionStore } from '../stores/session'
 
 const isCollapse = ref(false)
+const logoutDialogVisible = ref(false)
 const router = useRouter()
+const sessionStore = useSessionStore()
+
+const displayName = computed(() => sessionStore.userInfo?.realName || sessionStore.userInfo?.username || '管理员')
+const canVisitMenu = (menuKey) => sessionStore.hasMenu(menuKey)
+const hasSystemMenus = computed(() => sessionStore.hasAnyMenu(['system:user', 'system:dept', 'system:role']))
 
 const handleLogout = () => {
-  ElMessageBox.confirm('确定要退出系统吗?', '提示', {
-    confirmButtonText: '确定',
-    cancelButtonText: '取消',
-    type: 'warning'
-  }).then(() => {
-    localStorage.removeItem('token')
-    ElMessage.success('已退出登录')
-    router.push('/login')
-  })
+  logoutDialogVisible.value = true
+}
+
+const confirmLogout = async () => {
+  await sessionStore.logout()
+  logoutDialogVisible.value = false
+  ElMessage.success('已退出登录')
+  router.push('/login')
 }
 </script>
 
@@ -138,11 +154,10 @@ const handleLogout = () => {
 }
 
 .aside-menu {
-  flex: 1; /* 占据剩余空间 */
+  flex: 1;
   border-right: none;
 }
 
-/* 侧边栏底部样式修改 */
 .aside-footer {
   border-top: 1px solid #3d4d66;
   padding: 15px 0;
@@ -175,13 +190,17 @@ const handleLogout = () => {
   background-color: #f0f2f5;
   position: relative;
   height: 100vh;
-  overflow: hidden; /* 核心修复：防止内容溢出产生滚动条 */
+  overflow: hidden;
 }
 
-/* 解决下拉菜单文字颜色 */
 :deep(.el-dropdown-menu__item) {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.logout-tip {
+  font-size: 14px;
+  color: #303133;
 }
 </style>
