@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { useSessionStore } from '../stores/session'
 
 // 1. 定义路由列表
 const routes = [
@@ -60,17 +61,24 @@ const router = createRouter({
 
 // 2. 路由守卫：防止未登录越权访问
 router.beforeEach((to, from, next) => {
-  const token = localStorage.getItem('token')
-  
-  if (to.path === '/login') {
-    next()
-  } else {
-    if (!token) {
-      next('/login') // 无 Token 强制跳转登录
-    } else {
-      next() // 有 Token 放行
+  const sessionStore = useSessionStore()
+  const isPublic = Boolean(to.meta?.isPublic)
+
+  if (isPublic) {
+    if (to.path === '/login' && sessionStore.isAuthenticated) {
+      next('/dashboard')
+      return
     }
+    next()
+    return
   }
+
+  if (!sessionStore.isAuthenticated) {
+    next('/login')
+    return
+  }
+
+  next()
 })
 
 export default router

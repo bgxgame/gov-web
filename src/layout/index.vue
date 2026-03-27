@@ -53,7 +53,7 @@
           <el-dropdown trigger="click" placement="right-end">
             <div class="user-profile-trigger">
               <el-avatar :size="32" icon="UserFilled" />
-              <span class="username" v-if="!isCollapse">管理员</span>
+              <span class="username" v-if="!isCollapse">{{ displayName }}</span>
             </div>
             <template #dropdown>
               <el-dropdown-menu>
@@ -76,20 +76,23 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessageBox, ElMessage } from 'element-plus'
+import { useSessionStore } from '../stores/session'
 
 const isCollapse = ref(false)
 const router = useRouter()
+const sessionStore = useSessionStore()
+const displayName = computed(() => sessionStore.userInfo?.username || '管理员')
 
 const handleLogout = () => {
   ElMessageBox.confirm('确定要退出系统吗?', '提示', {
     confirmButtonText: '确定',
     cancelButtonText: '取消',
     type: 'warning'
-  }).then(() => {
-    localStorage.removeItem('token')
+  }).then(async () => {
+    await sessionStore.logout()
     ElMessage.success('已退出登录')
     router.push('/login')
   })

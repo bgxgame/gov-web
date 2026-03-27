@@ -1,26 +1,19 @@
 <template>
   <div class="app-container">
-    <el-card>
+    <el-card shadow="never">
       <template #header>
-        <div class="card-header">
-          <span>部门组织架构</span>
-          <el-button type="primary">新增部门</el-button>
-        </div>
+        <span>部门管理（第二阶段）</span>
       </template>
-      <el-table :data="[]" border row-key="id" default-expand-all>
-        <el-table-column prop="deptName" label="部门名称" />
-        <el-table-column prop="leaderName" label="负责人" />
-        <el-table-column label="操作" width="200">
-          <template #default>
-            <el-button link type="primary">修改</el-button>
-            <el-button link type="danger">删除</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
+      <el-alert type="info" :closable="false" show-icon>
+        部门树与负责人维护将在下一阶段实现，预期接口包括 `GET /system/dept/tree`、
+        `POST /system/dept/add`、`PUT /system/dept/update`、`DELETE /system/dept/{id}`。
+      </el-alert>
     </el-card>
   </div>
 </template>
 
-<script setup>
-// 后续编写逻辑
-</script>
+<style scoped>
+.app-container {
+  padding: 10px;
+}
+</style>

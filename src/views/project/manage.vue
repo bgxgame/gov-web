@@ -1,1 +1,346 @@
-<template><div>项目管理列表（待开发）</div></template>
+<template>
+  <div class="app-container">
+    <el-card class="filter-card" shadow="never">
+      <el-form :inline="true" :model="queryForm" class="query-form">
+        <el-form-item label="项目名称">
+          <el-input v-model="queryForm.projectName" placeholder="请输入项目名称" clearable />
+        </el-form-item>
+        <el-form-item label="状态">
+          <el-select v-model="queryForm.status" placeholder="全部状态" clearable style="width: 140px">
+            <el-option v-for="item in statusOptions" :key="item.value" :label="item.label" :value="item.value" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="省份">
+          <el-input v-model="queryForm.province" placeholder="如：陕西省" clearable />
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" @click="handleQuery">查询</el-button>
+          <el-button @click="handleReset">重置</el-button>
+          <el-button type="success" @click="openCreateDialog">新增项目</el-button>
+        </el-form-item>
+      </el-form>
+    </el-card>
+
+    <el-card shadow="never">
+      <el-table :data="tableData" border v-loading="tableLoading">
+        <el-table-column prop="projectName" label="项目名称" min-width="180" />
+        <el-table-column prop="projectCode" label="项目编号" min-width="130" />
+        <el-table-column prop="address" label="地址" min-width="220" />
+        <el-table-column prop="leaderName" label="负责人" min-width="100" />
+        <el-table-column prop="leaderPhone" label="联系电话" min-width="130" />
+        <el-table-column label="状态" min-width="100">
+          <template #default="{ row }">
+            <el-tag :type="statusTagType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="createTime" label="创建时间" min-width="170" />
+        <el-table-column label="操作" width="310" fixed="right">
+          <template #default="{ row }">
+            <el-button link type="primary" @click="handleDetail(row)">详情</el-button>
+            <el-button link type="primary" @click="openEditDialog(row)">编辑</el-button>
+            <el-button link type="success" :disabled="!canSubmit(row)" @click="handleSubmit(row)">提交审批</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <div class="pagination-wrap">
+        <el-pagination
+          v-model:current-page="pagination.pageNum"
+          v-model:page-size="pagination.pageSize"
+          :page-sizes="[10, 20, 50]"
+          layout="total, sizes, prev, pager, next, jumper"
+          :total="pagination.total"
+          @size-change="fetchTableData"
+          @current-change="fetchTableData"
+        />
+      </div>
+    </el-card>
+
+    <el-dialog v-model="editDialog.visible" :title="editDialog.mode === 'create' ? '新增项目' : '编辑项目'" width="760px">
+      <el-form :model="editDialog.form" label-width="90px">
+        <el-row :gutter="12">
+          <el-col :span="12">
+            <el-form-item label="项目名称" required>
+              <el-input v-model="editDialog.form.projectName" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="项目编号">
+              <el-input v-model="editDialog.form.projectCode" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="省份">
+              <el-input v-model="editDialog.form.province" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="城市">
+              <el-input v-model="editDialog.form.city" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="区县">
+              <el-input v-model="editDialog.form.district" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="24">
+            <el-form-item label="项目地址">
+              <el-input v-model="editDialog.form.address" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="经度">
+              <el-input v-model="editDialog.form.longitude" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="纬度">
+              <el-input v-model="editDialog.form.latitude" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="负责人">
+              <el-input v-model="editDialog.form.leaderName" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="联系电话">
+              <el-input v-model="editDialog.form.leaderPhone" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="24">
+            <el-form-item label="项目描述">
+              <el-input v-model="editDialog.form.description" type="textarea" :rows="3" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+      </el-form>
+      <template #footer>
+        <el-button @click="editDialog.visible = false">取消</el-button>
+        <el-button type="primary" :loading="editDialog.saving" @click="handleSave">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <el-drawer v-model="detailDrawer.visible" title="项目详情" size="520px">
+      <el-descriptions :column="1" border>
+        <el-descriptions-item label="项目名称">{{ detailDrawer.data.projectName || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="项目编号">{{ detailDrawer.data.projectCode || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="状态">
+          <el-tag :type="statusTagType(detailDrawer.data.status)" size="small">{{ statusLabel(detailDrawer.data.status) }}</el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="负责人">{{ detailDrawer.data.leaderName || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="联系电话">{{ detailDrawer.data.leaderPhone || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="省市区">
+          {{ [detailDrawer.data.province, detailDrawer.data.city, detailDrawer.data.district].filter(Boolean).join(' / ') || '-' }}
+        </el-descriptions-item>
+        <el-descriptions-item label="项目地址">{{ detailDrawer.data.address || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="坐标">
+          {{ detailDrawer.data.longitude || '-' }}, {{ detailDrawer.data.latitude || '-' }}
+        </el-descriptions-item>
+        <el-descriptions-item label="项目描述">{{ detailDrawer.data.description || '-' }}</el-descriptions-item>
+      </el-descriptions>
+    </el-drawer>
+  </div>
+</template>
+
+<script setup>
+import { onMounted, reactive, ref } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import {
+  addProject,
+  getProjectDetail,
+  getProjectPage,
+  submitProject,
+  updateProject
+} from '../../api/project'
+
+const statusOptions = [
+  { label: '待提交', value: 0 },
+  { label: '审批中', value: 1 },
+  { label: '已通过', value: 2 },
+  { label: '已驳回', value: 3 }
+]
+
+const queryForm = reactive({
+  projectName: '',
+  status: undefined,
+  province: ''
+})
+
+const pagination = reactive({
+  pageNum: 1,
+  pageSize: 10,
+  total: 0
+})
+
+const tableLoading = ref(false)
+const tableData = ref([])
+
+const editDialog = reactive({
+  visible: false,
+  mode: 'create',
+  saving: false,
+  form: createEmptyForm()
+})
+
+const detailDrawer = reactive({
+  visible: false,
+  data: {}
+})
+
+function createEmptyForm() {
+  return {
+    id: undefined,
+    projectName: '',
+    projectCode: '',
+    address: '',
+    province: '',
+    city: '',
+    district: '',
+    longitude: '',
+    latitude: '',
+    leaderName: '',
+    leaderPhone: '',
+    description: ''
+  }
+}
+
+function statusLabel(status) {
+  const item = statusOptions.find((s) => Number(s.value) === Number(status))
+  return item ? item.label : '-'
+}
+
+function statusTagType(status) {
+  if (Number(status) === 1) return 'warning'
+  if (Number(status) === 2) return 'success'
+  if (Number(status) === 3) return 'danger'
+  return 'info'
+}
+
+function canSubmit(row) {
+  return Number(row.status) === 0 || Number(row.status) === 3 || row.status === null || row.status === undefined
+}
+
+async function fetchTableData() {
+  tableLoading.value = true
+  try {
+    const res = await getProjectPage({
+      pageNum: pagination.pageNum,
+      pageSize: pagination.pageSize,
+      projectName: queryForm.projectName || undefined,
+      status: queryForm.status,
+      province: queryForm.province || undefined
+    })
+    tableData.value = res.data?.records || []
+    pagination.total = Number(res.data?.total || 0)
+  } finally {
+    tableLoading.value = false
+  }
+}
+
+function handleQuery() {
+  pagination.pageNum = 1
+  fetchTableData()
+}
+
+function handleReset() {
+  queryForm.projectName = ''
+  queryForm.status = undefined
+  queryForm.province = ''
+  pagination.pageNum = 1
+  fetchTableData()
+}
+
+function openCreateDialog() {
+  editDialog.mode = 'create'
+  editDialog.form = createEmptyForm()
+  editDialog.visible = true
+}
+
+function openEditDialog(row) {
+  editDialog.mode = 'edit'
+  editDialog.form = {
+    id: row.id,
+    projectName: row.projectName || '',
+    projectCode: row.projectCode || '',
+    address: row.address || '',
+    province: row.province || '',
+    city: row.city || '',
+    district: row.district || '',
+    longitude: row.longitude || '',
+    latitude: row.latitude || '',
+    leaderName: row.leaderName || '',
+    leaderPhone: row.leaderPhone || '',
+    description: row.description || ''
+  }
+  editDialog.visible = true
+}
+
+async function handleSave() {
+  if (!editDialog.form.projectName) {
+    ElMessage.warning('项目名称不能为空')
+    return
+  }
+
+  editDialog.saving = true
+  try {
+    const payload = {
+      ...editDialog.form,
+      longitude: editDialog.form.longitude === '' ? null : Number(editDialog.form.longitude),
+      latitude: editDialog.form.latitude === '' ? null : Number(editDialog.form.latitude)
+    }
+    if (editDialog.mode === 'create') {
+      await addProject(payload)
+      ElMessage.success('新增成功')
+    } else {
+      await updateProject(payload)
+      ElMessage.success('更新成功')
+    }
+    editDialog.visible = false
+    fetchTableData()
+  } finally {
+    editDialog.saving = false
+  }
+}
+
+async function handleDetail(row) {
+  const res = await getProjectDetail(row.id)
+  detailDrawer.data = res.data || {}
+  detailDrawer.visible = true
+}
+
+async function handleSubmit(row) {
+  await ElMessageBox.confirm(`确认提交项目「${row.projectName}」进入审批流吗？`, '提交确认', {
+    type: 'warning'
+  })
+  const detailRes = await getProjectDetail(row.id)
+  await submitProject(detailRes.data)
+  ElMessage.success('提交审批成功')
+  fetchTableData()
+}
+
+onMounted(() => {
+  fetchTableData()
+})
+</script>
+
+<style scoped>
+.app-container {
+  padding: 10px;
+}
+
+.filter-card {
+  margin-bottom: 10px;
+}
+
+.query-form {
+  margin-bottom: -18px;
+}
+
+.pagination-wrap {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 12px;
+}
+</style>

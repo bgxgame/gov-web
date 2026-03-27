@@ -6,11 +6,13 @@ const service = axios.create({
   timeout: 10000
 })
 
+let redirectedBy401 = false
+
 // 请求拦截：自动携带 Token
 service.interceptors.request.use(config => {
   const token = localStorage.getItem('token')
   if (token) {
-    config.headers['Authorization'] = token // 必须与后端 sa-token.token-name 一致
+    config.headers.Authorization = token // 必须与后端 sa-token.token-name 一致
   }
   return config
 }, error => {
@@ -21,10 +23,21 @@ service.interceptors.request.use(config => {
 service.interceptors.response.use(response => {
   const res = response.data
   if (res.code !== 200) {
-    ElMessage.error(res.msg || '系统错误')
     if (res.code === 401) {
-      // 登录失效，跳转回登录页
-      window.location.href = '/login'
+      localStorage.removeItem('token')
+      localStorage.removeItem('user_info')
+      if (!redirectedBy401) {
+        redirectedBy401 = true
+        ElMessage.error(res.msg || '登录已失效，请重新登录')
+        if (window.location.pathname !== '/login') {
+          window.location.replace('/login')
+        }
+        setTimeout(() => {
+          redirectedBy401 = false
+        }, 800)
+      }
+    } else {
+      ElMessage.error(res.msg || '系统错误')
     }
     return Promise.reject(new Error(res.msg || 'Error'))
   }
