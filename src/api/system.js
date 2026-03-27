@@ -15,6 +15,8 @@ export const deleteDept = (id) => request.delete(`/system/dept/${id}`)
 
 export const getRolePage = (params) => request.get('/system/role/page', { params })
 export const getRoleAll = () => request.get('/system/role/all')
+export const getRoleMenuCatalog = () => request.get('/system/role/menu-catalog')
 export const addRole = (payload) => request.post('/system/role/add', payload)
 export const updateRole = (payload) => request.put('/system/role/update', payload)
+export const updateRoleMenus = (id, payload) => request.put(`/system/role/${id}/menus`, payload)
 export const deleteRole = (id) => request.delete(`/system/role/${id}`)

@@ -1,18 +1,20 @@
-<template>
+﻿<template>
   <div class="app-container">
     <el-card shadow="never">
       <template #header>
         <div class="card-header">
           <span>部门管理</span>
-          <el-button type="primary" @click="openCreateDialog">新增部门</el-button>
+          <div class="actions">
+            <el-button v-if="canManageUsers" @click="goUserManage">新增部门用户</el-button>
+            <el-button v-if="isAdmin" type="primary" @click="openCreateDialog">新增部门</el-button>
+          </div>
         </div>
       </template>
 
       <el-table :data="tableData" border row-key="id" default-expand-all v-loading="loading">
-        <el-table-column prop="deptName" label="部门名称" min-width="180" />
-        <el-table-column prop="leaderName" label="负责人" min-width="120" />
-        <el-table-column prop="id" label="部门ID" min-width="120" />
-        <el-table-column label="操作" width="200" fixed="right">
+        <el-table-column prop="deptName" label="部门名称" min-width="220" />
+        <el-table-column prop="leaderName" label="负责人" min-width="140" />
+        <el-table-column v-if="isAdmin" label="操作" width="200" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openEditDialog(row)">编辑</el-button>
             <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
@@ -54,12 +56,19 @@
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useRouter } from 'vue-router'
+import { useSessionStore } from '../../stores/session'
 import { addDept, deleteDept, getDeptTree, getUserSimple, updateDept } from '../../api/system'
 
 const loading = ref(false)
 const tableData = ref([])
 const deptOptions = ref([])
 const userOptions = ref([])
+
+const router = useRouter()
+const sessionStore = useSessionStore()
+const isAdmin = sessionStore.hasRole('admin')
+const canManageUsers = isAdmin || sessionStore.hasRole('dept_leader')
 
 const dialog = reactive({
   visible: false,
@@ -105,6 +114,10 @@ async function fetchUserSimple() {
   userOptions.value = res.data || []
 }
 
+function goUserManage() {
+  router.push('/system/user')
+}
+
 function openCreateDialog() {
   dialog.mode = 'create'
   dialog.form = createEmptyForm()
@@ -144,7 +157,7 @@ async function handleSave() {
 }
 
 async function handleDelete(row) {
-  await ElMessageBox.confirm(`确认删除部门「${row.deptName}」吗？`, '删除确认', { type: 'warning' })
+  await ElMessageBox.confirm(`确认删除部门《${row.deptName}》吗？`, '删除确认', { type: 'warning' })
   await deleteDept(row.id)
   ElMessage.success('删除成功')
   fetchDeptTree()
@@ -164,5 +177,10 @@ onMounted(async () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
 }
 </style>

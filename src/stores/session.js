@@ -16,7 +16,14 @@ function normalizeRoleCode(roleCode) {
 
 function normalizeRoleCodes(roleCodes) {
   if (!Array.isArray(roleCodes)) return []
-  return [...new Set(roleCodes.map((item) => normalizeRoleCode(item)).filter(Boolean))]
+  const normalized = roleCodes.map((item) => normalizeRoleCode(item)).filter(Boolean)
+  if (!normalized.includes('user')) normalized.push('user')
+  return [...new Set(normalized)]
+}
+
+function normalizeMenuKeys(menuKeys) {
+  if (!Array.isArray(menuKeys)) return []
+  return [...new Set(menuKeys.map((item) => String(item || '').trim()).filter(Boolean))]
 }
 
 function parseUserInfo() {
@@ -26,7 +33,8 @@ function parseUserInfo() {
     const data = JSON.parse(raw)
     return {
       ...data,
-      roleCodes: normalizeRoleCodes(data?.roleCodes)
+      roleCodes: normalizeRoleCodes(data?.roleCodes),
+      menuKeys: normalizeMenuKeys(data?.menuKeys)
     }
   } catch (error) {
     return null
@@ -71,7 +79,8 @@ export const useSessionStore = defineStore('session', {
         realName: res.data.realName,
         deptId: res.data.deptId,
         deptName: res.data.deptName,
-        roleCodes: normalizeRoleCodes(res.data.roleCodes)
+        roleCodes: normalizeRoleCodes(res.data.roleCodes),
+        menuKeys: normalizeMenuKeys(res.data.menuKeys)
       })
       return res
     },
@@ -84,7 +93,8 @@ export const useSessionStore = defineStore('session', {
         realName: res.data.realName,
         deptId: res.data.deptId,
         deptName: res.data.deptName,
-        roleCodes: normalizeRoleCodes(res.data.roleCodes)
+        roleCodes: normalizeRoleCodes(res.data.roleCodes),
+        menuKeys: normalizeMenuKeys(res.data.menuKeys)
       })
     },
     hasRole(roleCode) {
@@ -100,6 +110,14 @@ export const useSessionStore = defineStore('session', {
         return (roleCodes || []).includes('user')
       }
       return (roleCodes || []).some((item) => current.includes(item))
+    },
+    hasMenu(menuKey) {
+      const menus = this.userInfo?.menuKeys || []
+      return menus.includes(menuKey)
+    },
+    hasAnyMenu(menuKeys) {
+      const menus = this.userInfo?.menuKeys || []
+      return (menuKeys || []).some((key) => menus.includes(key))
     },
     async logout(callServer = true) {
       if (callServer) {

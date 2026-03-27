@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="dashboard-container">
     <el-card class="map-card" shadow="never">
       <template #header>
@@ -8,9 +8,15 @@
             <span class="title">项目分布地理看板</span>
           </div>
           <div class="header-right">
-            <el-input v-model="filters.province" placeholder="省份" clearable class="filter-input" />
-            <el-input v-model="filters.city" placeholder="城市" clearable class="filter-input" />
-            <el-input v-model="filters.district" placeholder="区县" clearable class="filter-input" />
+            <el-select v-model="filters.province" clearable placeholder="省份" class="filter-input" @change="onProvinceChange">
+              <el-option v-for="item in provinceOptions" :key="item" :label="item" :value="item" />
+            </el-select>
+            <el-select v-model="filters.city" clearable placeholder="城市" class="filter-input" @change="onCityChange">
+              <el-option v-for="item in cityOptions" :key="item" :label="item" :value="item" />
+            </el-select>
+            <el-select v-model="filters.district" clearable placeholder="区县" class="filter-input" @change="loadScatterData">
+              <el-option v-for="item in districtOptions" :key="item" :label="item" :value="item" />
+            </el-select>
             <el-button type="primary" @click="loadScatterData">筛选</el-button>
             <el-button @click="resetFilters">重置</el-button>
           </div>
@@ -35,10 +41,11 @@
 </template>
 
 <script setup>
-import { onMounted, onUnmounted, reactive } from 'vue'
+import { onMounted, onUnmounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import * as echarts from 'echarts'
+import { Location } from '@element-plus/icons-vue'
 import axios from 'axios'
+import * as echarts from 'echarts'
 import { getProjectDetail, getProjectMapList } from '../../api/project'
 
 let chart = null
@@ -49,6 +56,12 @@ const filters = reactive({
   city: '',
   district: ''
 })
+
+const provinceOptions = ref([])
+const cityOptions = ref([])
+const districtOptions = ref([])
+
+const allMapRows = ref([])
 
 const detailDrawer = reactive({
   visible: false,
@@ -61,6 +74,50 @@ async function initMap() {
   echarts.registerMap('shaanxi', mapGeoJson)
 }
 
+function buildRegionOptions(rows) {
+  const provinces = new Set()
+  const cities = new Set()
+  const districts = new Set()
+
+  rows.forEach((item) => {
+    if (item.province) provinces.add(item.province)
+    if (item.city) cities.add(item.city)
+    if (item.district) districts.add(item.district)
+  })
+
+  provinceOptions.value = [...provinces]
+  cityOptions.value = [...cities]
+  districtOptions.value = [...districts]
+}
+
+function onProvinceChange() {
+  filters.city = ''
+  filters.district = ''
+  const citySet = new Set()
+  allMapRows.value.forEach((item) => {
+    if (!filters.province || item.province === filters.province) {
+      if (item.city) citySet.add(item.city)
+    }
+  })
+  cityOptions.value = [...citySet]
+  districtOptions.value = []
+  loadScatterData()
+}
+
+function onCityChange() {
+  filters.district = ''
+  const districtSet = new Set()
+  allMapRows.value.forEach((item) => {
+    const matchProvince = !filters.province || item.province === filters.province
+    const matchCity = !filters.city || item.city === filters.city
+    if (matchProvince && matchCity && item.district) {
+      districtSet.add(item.district)
+    }
+  })
+  districtOptions.value = [...districtSet]
+  loadScatterData()
+}
+
 async function loadScatterData() {
   if (!chart) return
   const res = await getProjectMapList({
@@ -69,7 +126,13 @@ async function loadScatterData() {
     district: filters.district || undefined
   })
 
-  const scatterData = (res.data || [])
+  const rows = res.data || []
+  if (!filters.province && !filters.city && !filters.district) {
+    allMapRows.value = rows
+    buildRegionOptions(rows)
+  }
+
+  const scatterData = rows
     .map((item) => {
       const point = resolvePoint(item)
       const lng = Number(point[0])
@@ -86,11 +149,7 @@ async function loadScatterData() {
       trigger: 'item',
       formatter: (params) => {
         if (params.seriesType !== 'effectScatter') return params.name
-        return `<div style="padding:6px">
-          <b style="color:#409EFF">${params.name}</b><br/>
-          地址：${params.value[3] || '暂无'}<br/>
-          坐标：${params.value[0]}, ${params.value[1]}
-        </div>`
+        return `<div style="padding:6px"><b style="color:#409EFF">${params.name}</b><br/>地址：${params.value[3] || '暂无'}<br/>坐标：${params.value[0]}, ${params.value[1]}</div>`
       }
     },
     geo: {
@@ -106,7 +165,7 @@ async function loadScatterData() {
     },
     series: [
       {
-        name: '项目点',
+        name: '项目点位',
         type: 'effectScatter',
         coordinateSystem: 'geo',
         data: scatterData,
@@ -189,11 +248,17 @@ function resetFilters() {
   filters.province = ''
   filters.city = ''
   filters.district = ''
+  buildRegionOptions(allMapRows.value)
   loadScatterData()
 }
 
 onMounted(async () => {
-  chart = echarts.init(document.getElementById('project-map'))
+  const container = document.getElementById('project-map')
+  if (!container) {
+    ElMessage.error('地图容器初始化失败')
+    return
+  }
+  chart = echarts.init(container)
   await initMap()
   await loadScatterData()
   chart.on('click', (params) => {
@@ -206,6 +271,10 @@ onMounted(async () => {
 
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize)
+  if (chart) {
+    chart.dispose()
+    chart = null
+  }
 })
 </script>
 

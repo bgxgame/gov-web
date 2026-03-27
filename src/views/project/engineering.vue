@@ -77,7 +77,7 @@ async function fetchAll() {
 
 async function handleApprove(row, approved) {
   await ElMessageBox.confirm(
-    approved ? `确认同意任务「${row.taskName}」吗？` : `确认驳回任务「${row.taskName}」吗？`,
+    approved ? `确认同意任务《${row.taskName}》吗？` : `确认驳回任务《${row.taskName}》吗？`,
     '审批确认',
     { type: approved ? 'success' : 'warning' }
   )

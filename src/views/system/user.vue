@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="app-container">
     <el-card class="filter-card" shadow="never">
       <el-form :inline="true" :model="queryForm">
@@ -17,7 +17,7 @@
         <el-form-item>
           <el-button type="primary" @click="handleQuery">查询</el-button>
           <el-button @click="handleReset">重置</el-button>
-          <el-button v-if="isAdmin" type="success" @click="openCreateDialog">新增用户</el-button>
+          <el-button v-if="canManageUsers" type="success" @click="openCreateDialog">新增用户</el-button>
         </el-form-item>
       </el-form>
     </el-card>
@@ -27,6 +27,7 @@
         <el-table-column prop="username" label="用户名" min-width="120" />
         <el-table-column prop="realName" label="姓名" min-width="120" />
         <el-table-column prop="deptName" label="部门" min-width="130" />
+        <el-table-column prop="roleNames" label="角色" min-width="160" />
         <el-table-column prop="phone" label="手机号" min-width="140" />
         <el-table-column label="状态" min-width="90">
           <template #default="{ row }">
@@ -70,7 +71,13 @@
           <el-input v-model="dialog.form.realName" />
         </el-form-item>
         <el-form-item label="所属部门">
-          <el-select v-model="dialog.form.deptId" clearable placeholder="请选择部门" style="width: 100%">
+          <el-select
+            v-model="dialog.form.deptId"
+            clearable
+            placeholder="请选择部门"
+            style="width: 100%"
+            :disabled="isDeptLeader"
+          >
             <el-option v-for="dept in deptOptions" :key="dept.id" :label="dept.label" :value="dept.id" />
           </el-select>
         </el-form-item>
@@ -105,7 +112,7 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useSessionStore } from '../../stores/session'
 import {
@@ -126,6 +133,8 @@ const roleOptions = ref([])
 
 const sessionStore = useSessionStore()
 const isAdmin = sessionStore.hasRole('admin')
+const isDeptLeader = sessionStore.hasRole('dept_leader') && !isAdmin
+const canManageUsers = isAdmin || isDeptLeader
 const currentDeptId = sessionStore.userInfo?.deptId
 
 const queryForm = reactive({
@@ -152,7 +161,7 @@ function createEmptyForm() {
     id: undefined,
     username: '',
     realName: '',
-    deptId: isAdmin ? undefined : currentDeptId,
+    deptId: isDeptLeader ? currentDeptId : undefined,
     phone: '',
     status: 1,
     roleIds: [],
@@ -251,7 +260,11 @@ async function handleSave() {
   dialog.saving = true
   try {
     if (dialog.mode === 'create') {
-      const res = await addUser(dialog.form)
+      const payload = { ...dialog.form }
+      if (isDeptLeader && !payload.deptId) {
+        payload.deptId = currentDeptId
+      }
+      const res = await addUser(payload)
       if (isAdmin && res.data?.userId) {
         await setUserRoles({
           userId: res.data.userId,

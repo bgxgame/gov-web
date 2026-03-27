@@ -34,11 +34,12 @@
           </template>
         </el-table-column>
         <el-table-column prop="createTime" label="创建时间" min-width="170" />
-        <el-table-column label="操作" width="310" fixed="right">
+        <el-table-column label="操作" width="360" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="handleDetail(row)">详情</el-button>
-            <el-button link type="primary" @click="openEditDialog(row)">编辑</el-button>
+            <el-button link type="primary" :disabled="!canEdit(row)" @click="openEditDialog(row)">编辑</el-button>
             <el-button link type="success" :disabled="!canSubmit(row)" @click="handleSubmit(row)">提交审批</el-button>
+            <el-button link type="danger" :disabled="!canDelete(row)" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -114,6 +115,7 @@
                 clearable
                 placeholder="请选择负责人"
                 style="width: 100%"
+                :disabled="isNormalUser"
                 @change="handleLeaderChange"
               >
                 <el-option
@@ -143,13 +145,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog
-      v-model="detailDialog.visible"
-      title="项目详情"
-      width="72%"
-      :close-on-click-modal="false"
-      destroy-on-close
-    >
+    <el-dialog v-model="detailDialog.visible" title="项目详情" width="72%" :close-on-click-modal="false" destroy-on-close>
       <el-descriptions :column="1" border v-loading="detailDialog.loading">
         <el-descriptions-item label="项目名称">{{ detailData.projectName || '-' }}</el-descriptions-item>
         <el-descriptions-item label="项目编号">{{ detailData.projectCode || '-' }}</el-descriptions-item>
@@ -162,9 +158,7 @@
           {{ [detailData.province, detailData.city, detailData.district].filter(Boolean).join(' / ') || '-' }}
         </el-descriptions-item>
         <el-descriptions-item label="项目地址">{{ detailData.address || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="坐标">
-          {{ detailData.longitude || '-' }}, {{ detailData.latitude || '-' }}
-        </el-descriptions-item>
+        <el-descriptions-item label="坐标">{{ detailData.longitude || '-' }}, {{ detailData.latitude || '-' }}</el-descriptions-item>
         <el-descriptions-item label="项目描述">{{ detailData.description || '-' }}</el-descriptions-item>
       </el-descriptions>
     </el-dialog>
@@ -175,7 +169,8 @@
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getUserSimple } from '../../api/system'
-import { addProject, getProjectDetail, getProjectPage, submitProject, updateProject } from '../../api/project'
+import { addProject, deleteProject, getProjectDetail, getProjectPage, submitProject, updateProject } from '../../api/project'
+import { useSessionStore } from '../../stores/session'
 
 const statusOptions = [
   { label: '待提交', value: 0 },
@@ -199,6 +194,10 @@ const pagination = reactive({
 const tableLoading = ref(false)
 const tableData = ref([])
 const userOptions = ref([])
+const sessionStore = useSessionStore()
+const isAdmin = sessionStore.hasRole('admin')
+const isDeptLeader = sessionStore.hasRole('dept_leader') && !isAdmin
+const isNormalUser = !isAdmin && !isDeptLeader
 
 const editDialog = reactive({
   visible: false,
@@ -229,7 +228,8 @@ function createEmptyForm() {
     leaderName: '',
     leaderPhone: '',
     description: '',
-    status: 0
+    status: 0,
+    creatorDeptId: undefined
   }
 }
 
@@ -255,7 +255,8 @@ function normalizeProject(project) {
     leaderName: project.leaderName || '',
     leaderPhone: project.leaderPhone || '',
     description: project.description || '',
-    status: project.status ?? 0
+    status: project.status ?? 0,
+    creatorDeptId: project.creatorDeptId
   }
 }
 
@@ -272,7 +273,24 @@ function statusTagType(status) {
 }
 
 function canSubmit(row) {
-  return Number(row.status) === 0 || Number(row.status) === 3 || row.status === null || row.status === undefined
+  return canEdit(row) && Number(row.status) === 0
+}
+
+function canEdit(row) {
+  if (Number(row.status) !== 0) return false
+  if (isAdmin) return true
+  const currentUserId = String(sessionStore.userInfo?.userId || '')
+  const currentDeptId = String(sessionStore.userInfo?.deptId || '')
+  const creatorId = String(row.creatorId || '')
+  const creatorDeptId = String(row.creatorDeptId || '')
+  if (isDeptLeader) {
+    return currentDeptId && creatorDeptId && currentDeptId === creatorDeptId
+  }
+  return currentUserId && creatorId && currentUserId === creatorId
+}
+
+function canDelete(row) {
+  return canEdit(row) && Number(row.status) === 0
 }
 
 async function fetchTableData() {
@@ -308,6 +326,14 @@ function handleReset() {
 function openCreateDialog() {
   editDialog.mode = 'create'
   editDialog.form = createEmptyForm()
+  if (isNormalUser) {
+    const currentUser = userOptions.value.find((item) => String(item.id) === String(sessionStore.userInfo?.userId || ''))
+    if (currentUser) {
+      editDialog.form.leaderUserId = currentUser.id
+      editDialog.form.leaderName = currentUser.realName || currentUser.username
+      editDialog.form.leaderPhone = currentUser.phone || ''
+    }
+  }
   editDialog.visible = true
 }
 
@@ -349,7 +375,6 @@ async function handleSave() {
   try {
     const payload = {
       ...editDialog.form,
-      leaderUserId: undefined,
       longitude: editDialog.form.longitude === '' ? null : Number(editDialog.form.longitude),
       latitude: editDialog.form.latitude === '' ? null : Number(editDialog.form.latitude)
     }
@@ -402,9 +427,25 @@ async function handleSubmit(row) {
   fetchTableData()
 }
 
+async function handleDelete(row) {
+  if (!row?.id) {
+    ElMessage.warning('项目ID不存在，无法删除')
+    return
+  }
+  await ElMessageBox.confirm(`确认删除项目《${row.projectName}》吗？`, '删除确认', { type: 'warning' })
+  await deleteProject(String(row.id))
+  ElMessage.success('删除成功')
+  fetchTableData()
+}
+
 async function loadUserOptions() {
   const res = await getUserSimple()
-  userOptions.value = res.data || []
+  let list = res.data || []
+  if (isNormalUser) {
+    const currentUserId = String(sessionStore.userInfo?.userId || '')
+    list = list.filter((item) => String(item.id) === currentUserId)
+  }
+  userOptions.value = list
 }
 
 onMounted(async () => {
