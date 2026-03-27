@@ -162,7 +162,7 @@ function createEmptyForm() {
 
 function canEditUser(row) {
   if (isAdmin) return true
-  return row.deptId && row.deptId === currentDeptId
+  return row.deptId && currentDeptId && String(row.deptId) === String(currentDeptId)
 }
 
 function flattenDeptTree(list, prefix) {

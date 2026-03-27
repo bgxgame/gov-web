@@ -3,11 +3,31 @@ import { getCurrentUser, login as loginApi, logout as logoutApi } from '../api/a
 
 const USER_KEY = 'user_info'
 
+function normalizeRoleCode(roleCode) {
+  const raw = String(roleCode || '').trim().toLowerCase()
+  if (!raw) return null
+  if (['admin', 'administrator', 'super_admin', 'superadmin', 'role_admin'].includes(raw)) return 'admin'
+  if (['dept_leader', 'deptleader', 'department_leader', 'leader', 'role_dept_leader'].includes(raw)) {
+    return 'dept_leader'
+  }
+  if (['user', 'normal_user', 'role_user'].includes(raw)) return 'user'
+  return raw
+}
+
+function normalizeRoleCodes(roleCodes) {
+  if (!Array.isArray(roleCodes)) return []
+  return [...new Set(roleCodes.map((item) => normalizeRoleCode(item)).filter(Boolean))]
+}
+
 function parseUserInfo() {
   const raw = localStorage.getItem(USER_KEY)
   if (!raw) return null
   try {
-    return JSON.parse(raw)
+    const data = JSON.parse(raw)
+    return {
+      ...data,
+      roleCodes: normalizeRoleCodes(data?.roleCodes)
+    }
   } catch (error) {
     return null
   }
@@ -51,7 +71,7 @@ export const useSessionStore = defineStore('session', {
         realName: res.data.realName,
         deptId: res.data.deptId,
         deptName: res.data.deptName,
-        roleCodes: res.data.roleCodes || []
+        roleCodes: normalizeRoleCodes(res.data.roleCodes)
       })
       return res
     },
@@ -64,7 +84,7 @@ export const useSessionStore = defineStore('session', {
         realName: res.data.realName,
         deptId: res.data.deptId,
         deptName: res.data.deptName,
-        roleCodes: res.data.roleCodes || []
+        roleCodes: normalizeRoleCodes(res.data.roleCodes)
       })
     },
     hasRole(roleCode) {

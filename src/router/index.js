@@ -78,7 +78,8 @@ router.beforeEach(async (to, from, next) => {
     return
   }
 
-  if (!sessionStore.userInfo) {
+  const needRefreshUserInfo = !sessionStore.userInfo || !Array.isArray(sessionStore.userInfo.roleCodes)
+  if (needRefreshUserInfo) {
     try {
       await sessionStore.refreshUserInfo()
     } catch (error) {

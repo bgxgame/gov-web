@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="app-container">
     <el-card class="filter-card" shadow="never">
       <el-form :inline="true" :model="queryForm" class="query-form">
@@ -56,7 +56,14 @@
       </div>
     </el-card>
 
-    <el-dialog v-model="editDialog.visible" :title="editDialog.mode === 'create' ? '新增项目' : '编辑项目'" width="760px">
+    <el-dialog
+      v-model="editDialog.visible"
+      :title="editDialog.mode === 'create' ? '新增项目' : '编辑项目'"
+      width="760px"
+      :close-on-click-modal="false"
+      destroy-on-close
+      v-loading="editDialog.loading"
+    >
       <el-form :model="editDialog.form" label-width="90px">
         <el-row :gutter="12">
           <el-col :span="12">
@@ -136,23 +143,29 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="detailDialog.visible" title="项目详情" width="72%">
-      <el-descriptions :column="2" border v-loading="detailDialog.loading">
-        <el-descriptions-item label="项目名称">{{ detailDrawer.data.projectName || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="项目编号">{{ detailDrawer.data.projectCode || '-' }}</el-descriptions-item>
+    <el-dialog
+      v-model="detailDialog.visible"
+      title="项目详情"
+      width="72%"
+      :close-on-click-modal="false"
+      destroy-on-close
+    >
+      <el-descriptions :column="1" border v-loading="detailDialog.loading">
+        <el-descriptions-item label="项目名称">{{ detailData.projectName || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="项目编号">{{ detailData.projectCode || '-' }}</el-descriptions-item>
         <el-descriptions-item label="状态">
-          <el-tag :type="statusTagType(detailDrawer.data.status)" size="small">{{ statusLabel(detailDrawer.data.status) }}</el-tag>
+          <el-tag :type="statusTagType(detailData.status)" size="small">{{ statusLabel(detailData.status) }}</el-tag>
         </el-descriptions-item>
-        <el-descriptions-item label="负责人">{{ detailDrawer.data.leaderName || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="联系电话">{{ detailDrawer.data.leaderPhone || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="负责人">{{ detailData.leaderName || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="联系电话">{{ detailData.leaderPhone || '-' }}</el-descriptions-item>
         <el-descriptions-item label="省市区">
-          {{ [detailDrawer.data.province, detailDrawer.data.city, detailDrawer.data.district].filter(Boolean).join(' / ') || '-' }}
+          {{ [detailData.province, detailData.city, detailData.district].filter(Boolean).join(' / ') || '-' }}
         </el-descriptions-item>
-        <el-descriptions-item label="项目地址">{{ detailDrawer.data.address || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="项目地址">{{ detailData.address || '-' }}</el-descriptions-item>
         <el-descriptions-item label="坐标">
-          {{ detailDrawer.data.longitude || '-' }}, {{ detailDrawer.data.latitude || '-' }}
+          {{ detailData.longitude || '-' }}, {{ detailData.latitude || '-' }}
         </el-descriptions-item>
-        <el-descriptions-item label="项目描述">{{ detailDrawer.data.description || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="项目描述">{{ detailData.description || '-' }}</el-descriptions-item>
       </el-descriptions>
     </el-dialog>
   </div>
@@ -162,13 +175,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getUserSimple } from '../../api/system'
-import {
-  addProject,
-  getProjectDetail,
-  getProjectPage,
-  submitProject,
-  updateProject
-} from '../../api/project'
+import { addProject, getProjectDetail, getProjectPage, submitProject, updateProject } from '../../api/project'
 
 const statusOptions = [
   { label: '待提交', value: 0 },
@@ -191,24 +198,21 @@ const pagination = reactive({
 
 const tableLoading = ref(false)
 const tableData = ref([])
+const userOptions = ref([])
 
 const editDialog = reactive({
   visible: false,
   mode: 'create',
+  loading: false,
   saving: false,
   form: createEmptyForm()
-})
-const userOptions = ref([])
-
-const detailDrawer = reactive({
-  data: {}
 })
 
 const detailDialog = reactive({
   visible: false,
-  loading: false,
-  data: {}
+  loading: false
 })
+const detailData = ref(createEmptyForm())
 
 function createEmptyForm() {
   return {
@@ -224,7 +228,34 @@ function createEmptyForm() {
     leaderUserId: undefined,
     leaderName: '',
     leaderPhone: '',
-    description: ''
+    description: '',
+    status: 0
+  }
+}
+
+function normalizeProject(project) {
+  if (!project) return createEmptyForm()
+  const matchedUser = userOptions.value.find(
+    (item) =>
+      String(item.id) === String(project.leaderUserId || '') ||
+      (project.leaderName && (item.realName === project.leaderName || item.username === project.leaderName)) ||
+      (project.leaderPhone && item.phone === project.leaderPhone)
+  )
+  return {
+    id: project.id ? String(project.id) : undefined,
+    projectName: project.projectName || '',
+    projectCode: project.projectCode || '',
+    address: project.address || '',
+    province: project.province || '',
+    city: project.city || '',
+    district: project.district || '',
+    longitude: project.longitude ?? '',
+    latitude: project.latitude ?? '',
+    leaderUserId: matchedUser?.id,
+    leaderName: project.leaderName || '',
+    leaderPhone: project.leaderPhone || '',
+    description: project.description || '',
+    status: project.status ?? 0
   }
 }
 
@@ -280,36 +311,28 @@ function openCreateDialog() {
   editDialog.visible = true
 }
 
-function openEditDialog(row) {
-  const matchedUser = userOptions.value.find(
-    (item) =>
-      (row.leaderName && (item.realName === row.leaderName || item.username === row.leaderName)) ||
-      (row.leaderPhone && item.phone === row.leaderPhone)
-  )
-  editDialog.mode = 'edit'
-  editDialog.form = {
-    id: row.id,
-    projectName: row.projectName || '',
-    projectCode: row.projectCode || '',
-    address: row.address || '',
-    province: row.province || '',
-    city: row.city || '',
-    district: row.district || '',
-    longitude: row.longitude ?? '',
-    latitude: row.latitude ?? '',
-    leaderUserId: matchedUser?.id,
-    leaderName: row.leaderName || '',
-    leaderPhone: row.leaderPhone || '',
-    description: row.description || ''
+async function openEditDialog(row) {
+  if (!row?.id) {
+    ElMessage.warning('项目ID不存在，无法编辑')
+    return
   }
+  editDialog.mode = 'edit'
   editDialog.visible = true
+  editDialog.loading = true
+  try {
+    const res = await getProjectDetail(String(row.id))
+    editDialog.form = normalizeProject(res.data || row)
+  } catch (error) {
+    ElMessage.error('加载项目详情失败')
+    editDialog.form = normalizeProject(row)
+  } finally {
+    editDialog.loading = false
+  }
 }
 
 function handleLeaderChange(userId) {
-  const target = userOptions.value.find((item) => item.id === userId)
-  if (!target) {
-    return
-  }
+  const target = userOptions.value.find((item) => String(item.id) === String(userId))
+  if (!target) return
   editDialog.form.leaderName = target.realName || target.username
   if (target.phone) {
     editDialog.form.leaderPhone = target.phone
@@ -352,36 +375,41 @@ async function handleDetail(row) {
   detailDialog.visible = true
   detailDialog.loading = true
   try {
-    const res = await getProjectDetail(row.id)
-    detailDrawer.data = res.data || {}
+    const res = await getProjectDetail(String(row.id))
+    detailData.value = normalizeProject(res.data || row)
     if (!res.data) {
-      ElMessage.warning('未找到该项目详情')
+      ElMessage.warning('未找到该项目详情，已展示列表数据')
     }
   } catch (error) {
-    ElMessage.error('加载项目详情失败')
+    detailData.value = normalizeProject(row)
+    ElMessage.error('加载项目详情失败，已展示列表数据')
   } finally {
     detailDialog.loading = false
   }
 }
 
 async function handleSubmit(row) {
-  await ElMessageBox.confirm(`确认提交项目「${row.projectName}」进入审批流吗？`, '提交确认', {
+  await ElMessageBox.confirm(`确认提交项目《${row.projectName}》进入审批流吗？`, '提交确认', {
     type: 'warning'
   })
-  const detailRes = await getProjectDetail(row.id)
+  const detailRes = await getProjectDetail(String(row.id))
+  if (!detailRes.data) {
+    ElMessage.warning('项目详情不存在，无法提交')
+    return
+  }
   await submitProject(detailRes.data)
   ElMessage.success('提交审批成功')
   fetchTableData()
 }
 
-onMounted(() => {
-  Promise.all([fetchTableData(), loadUserOptions()])
-})
-
 async function loadUserOptions() {
   const res = await getUserSimple()
   userOptions.value = res.data || []
 }
+
+onMounted(async () => {
+  await Promise.all([fetchTableData(), loadUserOptions()])
+})
 </script>
 
 <style scoped>
