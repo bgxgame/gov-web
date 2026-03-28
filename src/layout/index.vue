@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <el-container class="layout-wrapper">
     <el-aside :width="isCollapse ? '64px' : '220px'" class="aside-container">
       <div class="aside-content">

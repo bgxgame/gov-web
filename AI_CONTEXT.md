@@ -99,6 +99,7 @@ Stack: Vue 3, Vite 8, Vue Router 4, Pinia, Element Plus, Axios, ECharts
 ## 9) Known risks
 - Some historical text/comment encoding issues existed across project history.
 - Keep all edits in UTF-8 without BOM.
+- Follow .editorconfig on every edit; the repo encoding baseline is UTF-8 without BOM.
 - 401 handling currently hard redirects (`window.location.replace('/login')`); acceptable but can be further unified.
 
 ## 10) AI onboarding checklist
@@ -113,4 +114,4 @@ Then enforce these constraints:
 - Menu keys are the primary permission source.
 - Project status rule: only 0 and 3 are editable actions.
 - Map endpoint is approved-only by default.
-- Preserve UTF-8 and avoid permission regressions.
+- Follow `.editorconfig`, preserve UTF-8 without BOM, and avoid permission regressions.

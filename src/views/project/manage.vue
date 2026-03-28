@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="app-container">
     <el-card class="filter-card" shadow="never">
       <el-form :inline="true" :model="queryForm" class="query-form">

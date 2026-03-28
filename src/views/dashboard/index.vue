@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="dashboard-container">
     <el-card class="map-card" shadow="never">
       <template #header>
