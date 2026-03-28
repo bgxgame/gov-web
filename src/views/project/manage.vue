@@ -63,9 +63,9 @@
       width="760px"
       :close-on-click-modal="false"
       destroy-on-close
-      v-loading="editDialog.loading"
     >
-      <el-form :model="editDialog.form" label-width="90px">
+      <div v-loading="editDialog.loading">
+        <el-form :model="editDialog.form" label-width="90px">
         <el-row :gutter="12">
           <el-col :span="12">
             <el-form-item label="项目名称" required>
@@ -138,7 +138,8 @@
             </el-form-item>
           </el-col>
         </el-row>
-      </el-form>
+        </el-form>
+      </div>
       <template #footer>
         <el-button @click="editDialog.visible = false">取消</el-button>
         <el-button type="primary" :loading="editDialog.saving" @click="handleSave">保存</el-button>
@@ -167,11 +168,13 @@
 
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
 import { getUserSimple } from '../../api/system'
-import { addProject, deleteProject, getProjectDetail, getProjectPage, submitProject, updateProject } from '../../api/project'
+import { deleteProject, fetchProjectPageByForm, getProjectDetail, saveProjectForm, submitProjectById } from '../../api/project'
 import { useSessionStore } from '../../stores/session'
+import { confirmAction, showError, showSuccess, showWarning } from '../../utils/feedback'
+import { createEmptyProjectForm, normalizeProjectForm } from '../../utils/project-models'
 
+// 项目管理页：负责项目分页、编辑、详情、删除和提交审批。
 const statusOptions = [
   { label: '待提交', value: 0 },
   { label: '审批中', value: 1 },
@@ -194,6 +197,7 @@ const pagination = reactive({
 const tableLoading = ref(false)
 const tableData = ref([])
 const userOptions = ref([])
+const userOptionsLoaded = ref(false)
 const sessionStore = useSessionStore()
 const isAdmin = sessionStore.hasRole('admin')
 const isDeptLeader = sessionStore.hasRole('dept_leader') && !isAdmin
@@ -213,58 +217,23 @@ const detailDialog = reactive({
 })
 const detailData = ref(createEmptyForm())
 
+// 创建页面本地使用的默认项目表单。
 function createEmptyForm() {
-  return {
-    id: undefined,
-    projectName: '',
-    projectCode: '',
-    address: '',
-    province: '',
-    city: '',
-    district: '',
-    longitude: '',
-    latitude: '',
-    leaderUserId: undefined,
-    leaderName: '',
-    leaderPhone: '',
-    description: '',
-    status: 0,
-    creatorDeptId: undefined
-  }
+  return createEmptyProjectForm()
 }
 
+// 把接口返回或表格行数据统一规整成弹窗表单结构。
 function normalizeProject(project) {
-  if (!project) return createEmptyForm()
-  const matchedUser = userOptions.value.find(
-    (item) =>
-      String(item.id) === String(project.leaderUserId || '') ||
-      (project.leaderName && (item.realName === project.leaderName || item.username === project.leaderName)) ||
-      (project.leaderPhone && item.phone === project.leaderPhone)
-  )
-  return {
-    id: project.id ? String(project.id) : undefined,
-    projectName: project.projectName || '',
-    projectCode: project.projectCode || '',
-    address: project.address || '',
-    province: project.province || '',
-    city: project.city || '',
-    district: project.district || '',
-    longitude: project.longitude ?? '',
-    latitude: project.latitude ?? '',
-    leaderUserId: matchedUser?.id,
-    leaderName: project.leaderName || '',
-    leaderPhone: project.leaderPhone || '',
-    description: project.description || '',
-    status: project.status ?? 0,
-    creatorDeptId: project.creatorDeptId
-  }
+  return normalizeProjectForm(project, userOptions.value)
 }
 
+// 根据状态值返回页面展示文案。
 function statusLabel(status) {
   const item = statusOptions.find((s) => Number(s.value) === Number(status))
   return item ? item.label : '-'
 }
 
+// 根据状态值返回 Tag 类型。
 function statusTagType(status) {
   if (Number(status) === 1) return 'warning'
   if (Number(status) === 2) return 'success'
@@ -272,10 +241,12 @@ function statusTagType(status) {
   return 'info'
 }
 
+// 提交审批的前提条件与编辑条件保持一致。
 function canSubmit(row) {
   return canEdit(row)
 }
 
+// 判断当前项目是否允许编辑。
 function canEdit(row) {
   const status = row.status === null || row.status === undefined ? null : Number(row.status)
   if (!(status === null || status === 0 || status === 3)) return false
@@ -290,20 +261,29 @@ function canEdit(row) {
   return currentUserId && creatorId && currentUserId === creatorId
 }
 
+// 删除项目的前提条件与编辑条件保持一致。
 function canDelete(row) {
   return canEdit(row)
 }
 
+// 懒加载负责人候选列表，避免页面首屏就额外打接口。
+async function ensureUserOptionsLoaded() {
+  if (userOptionsLoaded.value) return
+  const res = await getUserSimple()
+  let list = res.data || []
+  if (isNormalUser) {
+    const currentUserId = String(sessionStore.userInfo?.userId || '')
+    list = list.filter((item) => String(item.id) === currentUserId)
+  }
+  userOptions.value = list
+  userOptionsLoaded.value = true
+}
+
+// 查询项目分页数据。
 async function fetchTableData() {
   tableLoading.value = true
   try {
-    const res = await getProjectPage({
-      pageNum: pagination.pageNum,
-      pageSize: pagination.pageSize,
-      projectName: queryForm.projectName || undefined,
-      status: queryForm.status,
-      province: queryForm.province || undefined
-    })
+    const res = await fetchProjectPageByForm(queryForm, pagination)
     tableData.value = res.data?.records || []
     pagination.total = Number(res.data?.total || 0)
   } finally {
@@ -311,11 +291,13 @@ async function fetchTableData() {
   }
 }
 
+// 以当前查询条件重新查询第一页。
 function handleQuery() {
   pagination.pageNum = 1
   fetchTableData()
 }
 
+// 清空筛选条件并重新查询。
 function handleReset() {
   queryForm.projectName = ''
   queryForm.status = undefined
@@ -324,39 +306,49 @@ function handleReset() {
   fetchTableData()
 }
 
-function openCreateDialog() {
+// 打开新增项目弹窗，并在普通用户场景下自动带出本人信息。
+async function openCreateDialog() {
   editDialog.mode = 'create'
   editDialog.form = createEmptyForm()
-  if (isNormalUser) {
-    const currentUser = userOptions.value.find((item) => String(item.id) === String(sessionStore.userInfo?.userId || ''))
-    if (currentUser) {
-      editDialog.form.leaderUserId = currentUser.id
-      editDialog.form.leaderName = currentUser.realName || currentUser.username
-      editDialog.form.leaderPhone = currentUser.phone || ''
-    }
-  }
   editDialog.visible = true
+  editDialog.loading = true
+  try {
+    await ensureUserOptionsLoaded()
+    if (isNormalUser) {
+      const currentUser = userOptions.value.find((item) => String(item.id) === String(sessionStore.userInfo?.userId || ''))
+      if (currentUser) {
+        editDialog.form.leaderUserId = currentUser.id
+        editDialog.form.leaderName = currentUser.realName || currentUser.username
+        editDialog.form.leaderPhone = currentUser.phone || ''
+      }
+    }
+  } finally {
+    editDialog.loading = false
+  }
 }
 
+// 打开编辑弹窗，优先拉取详情后再回填表单。
 async function openEditDialog(row) {
   if (!row?.id) {
-    ElMessage.warning('项目ID不存在，无法编辑')
+    showWarning('项目ID不存在，无法编辑')
     return
   }
   editDialog.mode = 'edit'
   editDialog.visible = true
   editDialog.loading = true
   try {
+    await ensureUserOptionsLoaded()
     const res = await getProjectDetail(String(row.id))
     editDialog.form = normalizeProject(res.data || row)
   } catch (error) {
-    ElMessage.error('加载项目详情失败')
+    showError('加载项目详情失败')
     editDialog.form = normalizeProject(row)
   } finally {
     editDialog.loading = false
   }
 }
 
+// 切换负责人时同步更新负责人姓名和电话。
 function handleLeaderChange(userId) {
   const target = userOptions.value.find((item) => String(item.id) === String(userId))
   if (!target) return
@@ -366,26 +358,17 @@ function handleLeaderChange(userId) {
   }
 }
 
+// 保存项目表单。
 async function handleSave() {
   if (!editDialog.form.projectName) {
-    ElMessage.warning('项目名称不能为空')
+    showWarning('项目名称不能为空')
     return
   }
 
   editDialog.saving = true
   try {
-    const payload = {
-      ...editDialog.form,
-      longitude: editDialog.form.longitude === '' ? null : Number(editDialog.form.longitude),
-      latitude: editDialog.form.latitude === '' ? null : Number(editDialog.form.latitude)
-    }
-    if (editDialog.mode === 'create') {
-      await addProject(payload)
-      ElMessage.success('新增成功')
-    } else {
-      await updateProject(payload)
-      ElMessage.success('更新成功')
-    }
+    await saveProjectForm(editDialog.form)
+    showSuccess(editDialog.mode === 'create' ? '项目新增成功' : '项目更新成功')
     editDialog.visible = false
     fetchTableData()
   } finally {
@@ -393,9 +376,10 @@ async function handleSave() {
   }
 }
 
+// 打开项目详情弹窗。
 async function handleDetail(row) {
   if (!row?.id) {
-    ElMessage.warning('项目ID不存在，无法查看详情')
+    showWarning('项目ID不存在，无法查看详情')
     return
   }
   detailDialog.visible = true
@@ -404,61 +388,46 @@ async function handleDetail(row) {
     const res = await getProjectDetail(String(row.id))
     detailData.value = normalizeProject(res.data || row)
     if (!res.data) {
-      ElMessage.warning('未找到该项目详情，已展示列表数据')
+      showWarning('未找到该项目详情，已展示列表数据')
     }
   } catch (error) {
     detailData.value = normalizeProject(row)
-    ElMessage.error('加载项目详情失败，已展示列表数据')
+    showError('加载项目详情失败，已展示列表数据')
   } finally {
     detailDialog.loading = false
   }
 }
 
+// 把项目提交到审批流。
 async function handleSubmit(row) {
   try {
-    await ElMessageBox.confirm(`确认提交项目《${row.projectName}》进入审批流吗？`, '提交确认', {
-      type: 'warning'
-    })
-    const detailRes = await getProjectDetail(String(row.id))
-    if (!detailRes.data) {
-      ElMessage.warning('项目详情不存在，无法提交')
-      return
-    }
-    await submitProject(detailRes.data)
-    ElMessage.success('提交审批成功')
+    await confirmAction(`确认提交项目《${row.projectName}》进入审批流吗？`, { title: '提交确认', type: 'warning' })
+    await submitProjectById(row.id)
+    showSuccess('提交审批成功')
     fetchTableData()
   } catch (error) {
-    // 取消提交不提示错误
+    // 用户取消时不提示
   }
 }
 
+// 删除指定项目。
 async function handleDelete(row) {
   if (!row?.id) {
-    ElMessage.warning('项目ID不存在，无法删除')
+    showWarning('项目ID不存在，无法删除')
     return
   }
   try {
-    await ElMessageBox.confirm(`确认删除项目《${row.projectName}》吗？`, '删除确认', { type: 'warning' })
+    await confirmAction(`确认删除项目《${row.projectName}》吗？`, { title: '删除确认', type: 'warning' })
     await deleteProject(String(row.id))
-    ElMessage.success('删除成功')
+    showSuccess('删除成功')
     fetchTableData()
   } catch (error) {
-    // 取消删除不提示错误
+    // 用户取消时不提示
   }
-}
-
-async function loadUserOptions() {
-  const res = await getUserSimple()
-  let list = res.data || []
-  if (isNormalUser) {
-    const currentUserId = String(sessionStore.userInfo?.userId || '')
-    list = list.filter((item) => String(item.id) === currentUserId)
-  }
-  userOptions.value = list
 }
 
 onMounted(async () => {
-  await Promise.all([fetchTableData(), loadUserOptions()])
+  await fetchTableData()
 })
 </script>
 

@@ -19,8 +19,8 @@
         <el-table-column label="菜单权限" min-width="300">
           <template #default="{ row }">
             <el-space wrap>
-              <el-tag v-for="item in splitMenus(row.menuPerms)" :key="item" size="small">{{ menuLabelMap[item] || item }}</el-tag>
-              <span v-if="splitMenus(row.menuPerms).length === 0">-</span>
+              <el-tag v-for="item in splitMenuPerms(row.menuPerms)" :key="item" size="small">{{ menuLabelMap[item] || item }}</el-tag>
+              <span v-if="splitMenuPerms(row.menuPerms).length === 0">-</span>
             </el-space>
           </template>
         </el-table-column>
@@ -75,9 +75,11 @@
 
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { addRole, deleteRole, getRoleMenuCatalog, getRolePage, updateRole, updateRoleMenus } from '../../api/system'
+import { deleteRole, fetchRolePageByForm, getRoleMenuCatalog, saveRoleForm, updateRoleMenuKeys } from '../../api/system'
+import { confirmAction, showSuccess, showWarning } from '../../utils/feedback'
+import { createEmptyRoleForm, normalizeRoleForm, splitMenuPerms } from '../../utils/system-models'
 
+// 角色管理页：负责角色分页、角色维护和菜单权限分配。
 const loading = ref(false)
 const tableData = ref([])
 const menuCatalog = ref([])
@@ -107,21 +109,12 @@ const menuDialog = reactive({
   menuKeys: []
 })
 
+// 创建默认角色表单。
 function createEmptyForm() {
-  return {
-    id: undefined,
-    roleName: ''
-  }
+  return createEmptyRoleForm()
 }
 
-function splitMenus(menuPerms) {
-  if (!menuPerms) return []
-  return String(menuPerms)
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean)
-}
-
+// 拉取菜单目录，并构建菜单键到中文名称的映射。
 async function fetchMenuCatalog() {
   const res = await getRoleMenuCatalog()
   menuCatalog.value = res.data || []
@@ -132,14 +125,11 @@ async function fetchMenuCatalog() {
   menuLabelMap.value = map
 }
 
+// 查询角色分页数据。
 async function fetchTableData() {
   loading.value = true
   try {
-    const res = await getRolePage({
-      pageNum: pagination.pageNum,
-      pageSize: pagination.pageSize,
-      roleName: queryForm.roleName || undefined
-    })
+    const res = await fetchRolePageByForm(queryForm, pagination)
     tableData.value = res.data?.records || []
     pagination.total = Number(res.data?.total || 0)
   } finally {
@@ -147,52 +137,50 @@ async function fetchTableData() {
   }
 }
 
+// 以当前条件重新查询第一页。
 function handleQuery() {
   pagination.pageNum = 1
   fetchTableData()
 }
 
+// 重置条件并重新查询。
 function handleReset() {
   queryForm.roleName = ''
   pagination.pageNum = 1
   fetchTableData()
 }
 
+// 打开新增角色弹窗。
 function openCreateDialog() {
   dialog.mode = 'create'
   dialog.form = createEmptyForm()
   dialog.visible = true
 }
 
+// 打开编辑角色弹窗。
 function openEditDialog(row) {
   dialog.mode = 'edit'
-  dialog.form = {
-    id: row.id,
-    roleName: row.roleName || ''
-  }
+  dialog.form = normalizeRoleForm(row)
   dialog.visible = true
 }
 
+// 打开菜单权限分配弹窗。
 function openMenuDialog(row) {
   menuDialog.roleId = row.id
-  menuDialog.menuKeys = splitMenus(row.menuPerms)
+  menuDialog.menuKeys = splitMenuPerms(row.menuPerms)
   menuDialog.visible = true
 }
 
+// 保存角色基础信息。
 async function handleSave() {
   if (!dialog.form.roleName) {
-    ElMessage.warning('角色名称不能为空')
+    showWarning('角色名称不能为空')
     return
   }
   dialog.saving = true
   try {
-    if (dialog.mode === 'create') {
-      await addRole(dialog.form)
-      ElMessage.success('新增角色成功')
-    } else {
-      await updateRole(dialog.form)
-      ElMessage.success('更新角色成功')
-    }
+    await saveRoleForm(dialog.form)
+    showSuccess(dialog.mode === 'create' ? '新增角色成功' : '更新角色成功')
     dialog.visible = false
     fetchTableData()
   } finally {
@@ -200,11 +188,12 @@ async function handleSave() {
   }
 }
 
+// 保存角色菜单权限。
 async function handleSaveMenus() {
   menuDialog.saving = true
   try {
-    await updateRoleMenus(menuDialog.roleId, { menuKeys: menuDialog.menuKeys })
-    ElMessage.success('菜单权限更新成功')
+    await updateRoleMenuKeys(menuDialog.roleId, menuDialog.menuKeys)
+    showSuccess('菜单权限更新成功')
     menuDialog.visible = false
     fetchTableData()
   } finally {
@@ -212,10 +201,11 @@ async function handleSaveMenus() {
   }
 }
 
+// 删除角色。
 async function handleDelete(row) {
-  await ElMessageBox.confirm(`确认删除角色《${row.roleName}》吗？`, '删除确认', { type: 'warning' })
+  await confirmAction(`确认删除角色《${row.roleName}》吗？`, { title: '删除确认', type: 'warning' })
   await deleteRole(row.id)
-  ElMessage.success('删除成功')
+  showSuccess('删除成功')
   fetchTableData()
 }
 

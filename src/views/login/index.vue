@@ -9,7 +9,7 @@
         <el-form-item>
           <el-input v-model="loginForm.password" type="password" placeholder="密码" />
         </el-form-item>
-        <el-button type="primary" @click="handleLogin" style="width: 100%">登 录</el-button>
+        <el-button type="primary" @click="handleLogin" style="width: 100%">登录</el-button>
       </el-form>
     </el-card>
   </div>
@@ -18,9 +18,10 @@
 <script setup>
 import { reactive } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
 import { useSessionStore } from '../../stores/session'
+import { showSuccess } from '../../utils/feedback'
 
+// 登录页只负责收集账号密码、触发登录动作，并按权限落到默认首页。
 const router = useRouter()
 const sessionStore = useSessionStore()
 const loginForm = reactive({
@@ -28,11 +29,12 @@ const loginForm = reactive({
   password: ''
 })
 
+// 执行登录并在成功后跳转到系统默认首页。
 const handleLogin = async () => {
   try {
     await sessionStore.login(loginForm)
-    ElMessage.success('登录成功')
-    router.push('/dashboard') // 登录后跳转到首页
+    showSuccess('登录成功')
+    router.push(sessionStore.homePath || '/dashboard')
   } catch (error) {
     console.error(error)
   }
@@ -47,6 +49,7 @@ const handleLogin = async () => {
   align-items: center;
   background-color: #f5f7fa;
 }
+
 .login-card {
   width: 400px;
   text-align: center;

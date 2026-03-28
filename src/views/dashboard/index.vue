@@ -33,29 +33,31 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { Location } from '@element-plus/icons-vue'
 import axios from 'axios'
 import { use, init, registerMap } from 'echarts/core'
 import { GeoComponent, TooltipComponent } from 'echarts/components'
 import { EffectScatterChart } from 'echarts/charts'
 import { CanvasRenderer } from 'echarts/renderers'
-import { getProjectDetail, getProjectMapList } from '../../api/project'
+import { fetchProjectMapListByFilters, getProjectDetail } from '../../api/project'
+import { showError } from '../../utils/feedback'
 
+// 地图看板页：负责展示审批通过项目的空间分布，并支持逐层下钻和详情抽屉。
 use([GeoComponent, TooltipComponent, EffectScatterChart, CanvasRenderer])
 
 const ROOT_ADCODE = '610000'
 const ROOT_MAP_KEY = `map_${ROOT_ADCODE}`
 
 let chart = null
+let resizeTimer = null
+let reloadTimer = null
 const mapCache = new Map()
 
 const viewLevel = ref('city')
 const selectedCity = ref('')
 const selectedDistrict = ref('')
 const currentMapKey = ref(ROOT_MAP_KEY)
-
 const allApprovedRows = ref([])
 
 const detailDrawer = reactive({
@@ -63,23 +65,20 @@ const detailDrawer = reactive({
   data: {}
 })
 
+// 根据当前下钻层级生成顶部展示文案。
 const levelLabel = computed(() => {
   if (viewLevel.value === 'city') return '市级总览'
   if (viewLevel.value === 'district') return `${selectedCity.value || '-'} 区县`
   return `${selectedCity.value || '-'} / ${selectedDistrict.value || '-'} 项目点位`
 })
 
+// 规范化行政区名称，便于和内置中心点映射匹配。
 function normalizeRegionName(name) {
   if (!name) return ''
   return String(name).replace(/省|市|区|县|自治州|地区|特别行政区/g, '')
 }
 
-function getFeatureCenter(feature) {
-  if (feature?.properties?.center?.length >= 2) return feature.properties.center
-  if (feature?.properties?.cp?.length >= 2) return feature.properties.cp
-  return null
-}
-
+// 懒加载地图 GeoJSON，并做本地缓存。
 async function loadMapGeoJson(adcode) {
   if (mapCache.has(adcode)) return mapCache.get(adcode)
   try {
@@ -91,6 +90,7 @@ async function loadMapGeoJson(adcode) {
   }
 }
 
+// 确保指定地图已注册到 ECharts。
 async function ensureMapRegistered(adcode, mapKey) {
   const geoJson = await loadMapGeoJson(adcode)
   if (!geoJson) return false
@@ -98,6 +98,7 @@ async function ensureMapRegistered(adcode, mapKey) {
   return true
 }
 
+// 优先使用项目坐标，缺失时再按城市中心点兜底。
 function resolvePoint(item) {
   const rawLng = Number(item.longitude)
   const rawLat = Number(item.latitude)
@@ -123,6 +124,7 @@ function resolvePoint(item) {
   return [108.95, 34.27]
 }
 
+// 按城市或区县聚合项目数量，用于上层级点位展示。
 function aggregateByRegion(rows, regionKey) {
   const map = new Map()
   rows.forEach((item) => {
@@ -136,6 +138,7 @@ function aggregateByRegion(rows, regionKey) {
   return Array.from(map.values())
 }
 
+// 根据当前下钻层级返回需要渲染的数据集。
 function getRowsByLevel() {
   if (viewLevel.value === 'city') return allApprovedRows.value
   if (viewLevel.value === 'district') {
@@ -146,16 +149,17 @@ function getRowsByLevel() {
   )
 }
 
+// 按当前层级重新渲染地图。
 async function renderMap() {
   if (!chart) return
 
-  let rows = getRowsByLevel()
-  let scatterData = []
+  const rows = getRowsByLevel()
   const isCityLevel = viewLevel.value === 'city'
   const isDistrictLevel = viewLevel.value === 'district'
   const isProjectLevel = viewLevel.value === 'project'
+  let scatterData = []
 
-  if (viewLevel.value === 'city') {
+  if (isCityLevel) {
     scatterData = aggregateByRegion(rows, 'city').map((item) => {
       const point = resolvePoint(item.sample)
       return {
@@ -164,7 +168,7 @@ async function renderMap() {
         meta: { city: item.name }
       }
     })
-  } else if (viewLevel.value === 'district') {
+  } else if (isDistrictLevel) {
     scatterData = aggregateByRegion(rows, 'district').map((item) => {
       const point = resolvePoint(item.sample)
       return {
@@ -184,6 +188,7 @@ async function renderMap() {
     })
   }
 
+  const shouldShowLabels = isCityLevel || (isDistrictLevel && scatterData.length <= 18)
   chart.setOption({
     tooltip: {
       trigger: 'item',
@@ -197,7 +202,7 @@ async function renderMap() {
     geo: {
       map: currentMapKey.value,
       roam: true,
-      label: { show: !isCityLevel, color: '#666', fontSize: 10 },
+      label: { show: false },
       itemStyle: {
         areaColor: '#f3f4f6',
         borderColor: isCityLevel ? '#d5e5ff' : '#409EFF',
@@ -212,11 +217,11 @@ async function renderMap() {
         coordinateSystem: 'geo',
         data: scatterData,
         symbolSize: (val) => {
-          if (isProjectLevel) return 12
-          return Math.min(20, 8 + Number(val[2] || 0) * 1.2)
+          if (isProjectLevel) return 10
+          return Math.min(18, 8 + Number(val[2] || 0) * 1.1)
         },
         label: {
-          show: isCityLevel || isDistrictLevel,
+          show: shouldShowLabels,
           position: 'right',
           formatter: (params) => params.name,
           color: '#1f2937',
@@ -225,39 +230,52 @@ async function renderMap() {
           padding: [2, 6],
           borderRadius: 8
         },
-        showEffectOn: 'render',
-        rippleEffect: { brushType: 'stroke', scale: 4 },
-        itemStyle: { color: '#ff4d4f', shadowBlur: 10, shadowColor: '#333' }
+        showEffectOn: isProjectLevel ? 'render' : 'emphasis',
+        rippleEffect: isProjectLevel ? { brushType: 'stroke', scale: 3 } : undefined,
+        itemStyle: { color: '#ff4d4f', shadowBlur: isProjectLevel ? 10 : 4, shadowColor: '#333' }
       }
     ]
   })
 }
 
+// 拉取审批通过项目点位数据。
 async function fetchApprovedMapRows() {
-  const res = await getProjectMapList({ province: '陕西省' })
+  const res = await fetchProjectMapListByFilters({ province: '陕西省' })
   let rows = res.data || []
   if (rows.length === 0) {
-    const fallback = await getProjectMapList()
+    const fallback = await fetchProjectMapListByFilters()
     rows = fallback.data || []
   }
   allApprovedRows.value = rows
 }
 
-async function reloadMapData() {
+// 执行一次完整的数据刷新 + 地图重绘。
+async function performReload() {
   await fetchApprovedMapRows()
   await renderMap()
 }
 
+// 通过节流方式刷新地图数据，避免按钮连续点击造成重复请求。
+function reloadMapData() {
+  if (reloadTimer) return
+  reloadTimer = setTimeout(async () => {
+    reloadTimer = null
+    await performReload()
+  }, 180)
+}
+
+// 打开项目详情抽屉。
 async function openProjectDetail(projectId) {
   try {
     const res = await getProjectDetail(projectId)
     detailDrawer.data = res.data || {}
     detailDrawer.visible = true
   } catch (error) {
-    ElMessage.error('加载项目详情失败')
+    showError('加载项目详情失败')
   }
 }
 
+// 从市级下钻到区县层级。
 async function drillDownByCity(cityName) {
   selectedCity.value = cityName
   selectedDistrict.value = ''
@@ -266,12 +284,14 @@ async function drillDownByCity(cityName) {
   await renderMap()
 }
 
+// 从区县层级下钻到具体项目点位层级。
 async function drillDownByDistrict(districtName) {
   selectedDistrict.value = districtName
   viewLevel.value = 'project'
   await renderMap()
 }
 
+// 从当前层级返回上一级。
 async function goBack() {
   if (viewLevel.value === 'project') {
     viewLevel.value = 'district'
@@ -286,30 +306,38 @@ async function goBack() {
   await renderMap()
 }
 
+// 处理窗口尺寸变化，并节流触发 ECharts 重绘。
 function handleResize() {
-  if (chart) chart.resize()
+  if (resizeTimer) {
+    clearTimeout(resizeTimer)
+  }
+  resizeTimer = setTimeout(() => {
+    if (chart) chart.resize()
+  }, 120)
 }
 
 onMounted(async () => {
+  await nextTick()
+  await new Promise((resolve) => requestAnimationFrame(resolve))
+
   const container = document.getElementById('project-map')
   if (!container) {
-    ElMessage.error('地图容器初始化失败')
+    showError('地图容器初始化失败')
     return
   }
 
   chart = init(container)
-
   const rootLoaded = await ensureMapRegistered(ROOT_ADCODE, ROOT_MAP_KEY)
   if (!rootLoaded) {
-    ElMessage.error('陕西地图资源加载失败')
+    showError('陕西地图资源加载失败')
     return
   }
   currentMapKey.value = ROOT_MAP_KEY
 
-  await reloadMapData()
+  await performReload()
 
   chart.on('click', async (params) => {
-    if (params.seriesType !== 'effectScatter') return
+    if (params.seriesType !== 'scatter' && params.seriesType !== 'effectScatter') return
     if (viewLevel.value === 'city') {
       await drillDownByCity(params.name)
       return
@@ -326,6 +354,12 @@ onMounted(async () => {
 
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize)
+  if (resizeTimer) {
+    clearTimeout(resizeTimer)
+  }
+  if (reloadTimer) {
+    clearTimeout(reloadTimer)
+  }
   if (chart) {
     chart.dispose()
     chart = null

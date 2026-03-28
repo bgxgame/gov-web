@@ -87,27 +87,33 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
 import { Expand, Fold, HomeFilled, Management, Setting, SwitchButton, UserFilled } from '@element-plus/icons-vue'
 import { useSessionStore } from '../stores/session'
+import { showSuccess } from '../utils/feedback'
 
+// 布局壳层只负责左侧导航、页面容器和退出登录交互。
 const isCollapse = ref(false)
 const logoutDialogVisible = ref(false)
 const router = useRouter()
 const sessionStore = useSessionStore()
 
+// 展示名优先使用真实姓名，兜底才使用用户名。
 const displayName = computed(() => sessionStore.userInfo?.realName || sessionStore.userInfo?.username || '管理员')
+// 判断单个菜单是否可见。
 const canVisitMenu = (menuKey) => sessionStore.hasMenu(menuKey)
+// 判断是否应该显示系统设置分组。
 const hasSystemMenus = computed(() => sessionStore.hasAnyMenu(['system:user', 'system:dept', 'system:role']))
 
+// 打开退出登录确认框。
 const handleLogout = () => {
   logoutDialogVisible.value = true
 }
 
+// 确认退出登录，清理本地会话并跳回登录页。
 const confirmLogout = async () => {
   await sessionStore.logout()
   logoutDialogVisible.value = false
-  ElMessage.success('已退出登录')
+  showSuccess('已退出登录')
   router.push('/login')
 }
 </script>

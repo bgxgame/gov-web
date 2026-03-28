@@ -55,11 +55,13 @@
 
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
 import { useSessionStore } from '../../stores/session'
-import { addDept, deleteDept, getDeptTree, getUserSimple, updateDept } from '../../api/system'
+import { deleteDept, getDeptTree, getUserSimple, saveDeptForm } from '../../api/system'
+import { confirmAction, showSuccess, showWarning } from '../../utils/feedback'
+import { createEmptyDeptForm, flattenDeptOptions, normalizeDeptForm } from '../../utils/system-models'
 
+// 部门管理页：负责部门树展示、编辑和删除。
 const loading = ref(false)
 const tableData = ref([])
 const deptOptions = ref([])
@@ -77,78 +79,58 @@ const dialog = reactive({
   form: createEmptyForm()
 })
 
+// 创建默认部门表单。
 function createEmptyForm() {
-  return {
-    id: undefined,
-    parentId: 0,
-    deptName: '',
-    leaderId: undefined
-  }
+  return createEmptyDeptForm()
 }
 
-function flattenDeptTree(list, prefix) {
-  const result = []
-  ;(list || []).forEach((item) => {
-    const label = prefix ? `${prefix} / ${item.deptName}` : item.deptName
-    result.push({ id: item.id, label })
-    if (item.children && item.children.length > 0) {
-      result.push(...flattenDeptTree(item.children, label))
-    }
-  })
-  return result
-}
-
+// 查询部门树并同步生成上级部门选择项。
 async function fetchDeptTree() {
   loading.value = true
   try {
     const res = await getDeptTree()
     tableData.value = res.data || []
-    deptOptions.value = flattenDeptTree(res.data || [], '')
+    deptOptions.value = flattenDeptOptions(res.data || [])
   } finally {
     loading.value = false
   }
 }
 
+// 获取负责人候选用户列表。
 async function fetchUserSimple() {
   const res = await getUserSimple()
   userOptions.value = res.data || []
 }
 
+// 跳转到用户管理页，方便继续维护部门下用户。
 function goUserManage() {
   router.push('/system/user')
 }
 
+// 打开新增部门弹窗。
 function openCreateDialog() {
   dialog.mode = 'create'
   dialog.form = createEmptyForm()
   dialog.visible = true
 }
 
+// 打开编辑部门弹窗。
 function openEditDialog(row) {
   dialog.mode = 'edit'
-  dialog.form = {
-    id: row.id,
-    parentId: row.parentId || 0,
-    deptName: row.deptName || '',
-    leaderId: row.leaderId
-  }
+  dialog.form = normalizeDeptForm(row)
   dialog.visible = true
 }
 
+// 保存部门表单。
 async function handleSave() {
   if (!dialog.form.deptName) {
-    ElMessage.warning('部门名称不能为空')
+    showWarning('部门名称不能为空')
     return
   }
   dialog.saving = true
   try {
-    if (dialog.mode === 'create') {
-      await addDept(dialog.form)
-      ElMessage.success('新增部门成功')
-    } else {
-      await updateDept(dialog.form)
-      ElMessage.success('更新部门成功')
-    }
+    await saveDeptForm(dialog.form)
+    showSuccess(dialog.mode === 'create' ? '新增部门成功' : '更新部门成功')
     dialog.visible = false
     fetchDeptTree()
   } finally {
@@ -156,10 +138,11 @@ async function handleSave() {
   }
 }
 
+// 删除指定部门。
 async function handleDelete(row) {
-  await ElMessageBox.confirm(`确认删除部门《${row.deptName}》吗？`, '删除确认', { type: 'warning' })
+  await confirmAction(`确认删除部门《${row.deptName}》吗？`, { title: '删除确认', type: 'warning' })
   await deleteDept(row.id)
-  ElMessage.success('删除成功')
+  showSuccess('删除成功')
   fetchDeptTree()
 }
 

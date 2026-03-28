@@ -63,7 +63,7 @@
     </el-card>
 
     <el-dialog v-model="dialog.visible" :title="dialog.mode === 'create' ? '新增用户' : '编辑用户'" width="560px">
-      <el-form :model="dialog.form" label-width="90px">
+      <el-form :model="dialog.form" label-width="90px" v-loading="dialog.loadingOptions">
         <el-form-item label="用户名" required>
           <el-input v-model="dialog.form.username" :disabled="dialog.mode === 'edit'" />
         </el-form-item>
@@ -113,23 +113,25 @@
 
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
 import { useSessionStore } from '../../stores/session'
 import {
-  addUser,
+  fetchUserPageByForm,
   getDeptTree,
   getRoleAll,
-  getUserPage,
   getUserRoles,
-  setUserRoles,
-  updateUser,
-  updateUserStatus
+  saveUserForm,
+  setUserEnabled
 } from '../../api/system'
+import { showSuccess, showWarning } from '../../utils/feedback'
+import { createEmptyUserForm, flattenDeptOptions, normalizeUserForm } from '../../utils/system-models'
 
+// 用户管理页：负责用户分页、编辑、状态切换和角色配置。
 const loading = ref(false)
 const tableData = ref([])
 const deptOptions = ref([])
 const roleOptions = ref([])
+const deptOptionsLoaded = ref(false)
+const roleOptionsLoaded = ref(false)
 
 const sessionStore = useSessionStore()
 const isAdmin = sessionStore.hasRole('admin')
@@ -153,61 +155,53 @@ const dialog = reactive({
   visible: false,
   mode: 'create',
   saving: false,
+  loadingOptions: false,
   form: createEmptyForm()
 })
 
+// 创建默认用户表单。
 function createEmptyForm() {
-  return {
-    id: undefined,
-    username: '',
-    realName: '',
-    deptId: isDeptScopedManager ? currentDeptId : undefined,
-    phone: '',
-    status: 1,
-    roleIds: [],
-    password: ''
-  }
+  return createEmptyUserForm(isDeptScopedManager ? currentDeptId : undefined)
 }
 
+// 判断当前行用户是否允许编辑。
 function canEditUser(row) {
   if (isAdmin) return true
   if (!isDeptScopedManager) return false
   return row.deptId && currentDeptId && String(row.deptId) === String(currentDeptId)
 }
 
-function flattenDeptTree(list, prefix) {
-  const result = []
-  ;(list || []).forEach((item) => {
-    const label = prefix ? `${prefix} / ${item.deptName}` : item.deptName
-    result.push({ id: item.id, label })
-    if (item.children && item.children.length > 0) {
-      result.push(...flattenDeptTree(item.children, label))
-    }
-  })
-  return result
-}
-
-async function loadDeptOptions() {
+// 懒加载部门选项。
+async function ensureDeptOptionsLoaded() {
+  if (deptOptionsLoaded.value) return
   const res = await getDeptTree()
-  deptOptions.value = flattenDeptTree(res.data || [], '')
+  deptOptions.value = flattenDeptOptions(res.data || [])
+  deptOptionsLoaded.value = true
 }
 
-async function loadRoleOptions() {
-  if (!isAdmin) return
+// 懒加载角色选项，仅管理员需要。
+async function ensureRoleOptionsLoaded() {
+  if (!isAdmin || roleOptionsLoaded.value) return
   const res = await getRoleAll()
   roleOptions.value = res.data || []
+  roleOptionsLoaded.value = true
 }
 
+// 打开弹窗前，确保部门和角色选项都准备好。
+async function ensureDialogOptionsLoaded() {
+  dialog.loadingOptions = true
+  try {
+    await Promise.all([ensureDeptOptionsLoaded(), ensureRoleOptionsLoaded()])
+  } finally {
+    dialog.loadingOptions = false
+  }
+}
+
+// 查询用户分页数据。
 async function fetchTableData() {
   loading.value = true
   try {
-    const res = await getUserPage({
-      pageNum: pagination.pageNum,
-      pageSize: pagination.pageSize,
-      username: queryForm.username || undefined,
-      realName: queryForm.realName || undefined,
-      status: queryForm.status
-    })
+    const res = await fetchUserPageByForm(queryForm, pagination)
     tableData.value = res.data?.records || []
     pagination.total = Number(res.data?.total || 0)
   } finally {
@@ -215,11 +209,13 @@ async function fetchTableData() {
   }
 }
 
+// 以当前查询条件重新查第一页。
 function handleQuery() {
   pagination.pageNum = 1
   fetchTableData()
 }
 
+// 清空筛选条件并重新查询。
 function handleReset() {
   queryForm.username = ''
   queryForm.realName = ''
@@ -228,61 +224,37 @@ function handleReset() {
   fetchTableData()
 }
 
-function openCreateDialog() {
+// 打开新增用户弹窗。
+async function openCreateDialog() {
   dialog.mode = 'create'
   dialog.form = createEmptyForm()
   dialog.visible = true
+  await ensureDialogOptionsLoaded()
 }
 
+// 打开编辑弹窗，并在管理员场景下回填角色。
 async function openEditDialog(row) {
   dialog.mode = 'edit'
-  dialog.form = {
-    id: row.id,
-    username: row.username || '',
-    realName: row.realName || '',
-    deptId: row.deptId,
-    phone: row.phone || '',
-    status: Number(row.status) === 1 ? 1 : 0,
-    roleIds: [],
-    password: ''
-  }
+  dialog.form = normalizeUserForm(row)
   dialog.visible = true
+  await ensureDialogOptionsLoaded()
   if (isAdmin) {
     const roleRes = await getUserRoles(row.id)
     dialog.form.roleIds = roleRes.data || []
   }
 }
 
+// 保存用户表单。
 async function handleSave() {
   if (!dialog.form.username && dialog.mode === 'create') {
-    ElMessage.warning('用户名不能为空')
+    showWarning('用户名不能为空')
     return
   }
+
   dialog.saving = true
   try {
-    if (dialog.mode === 'create') {
-      const payload = { ...dialog.form }
-      if (isDeptScopedManager && !payload.deptId) {
-        payload.deptId = currentDeptId
-      }
-      const res = await addUser(payload)
-      if (isAdmin && res.data?.userId) {
-        await setUserRoles({
-          userId: res.data.userId,
-          roleIds: dialog.form.roleIds || []
-        })
-      }
-      ElMessage.success('新增用户成功')
-    } else {
-      await updateUser(dialog.form)
-      if (isAdmin) {
-        await setUserRoles({
-          userId: dialog.form.id,
-          roleIds: dialog.form.roleIds || []
-        })
-      }
-      ElMessage.success('更新用户成功')
-    }
+    await saveUserForm(dialog.form, isDeptScopedManager ? currentDeptId : undefined)
+    showSuccess(dialog.mode === 'create' ? '新增用户成功' : '更新用户成功')
     dialog.visible = false
     fetchTableData()
   } finally {
@@ -290,17 +262,15 @@ async function handleSave() {
   }
 }
 
+// 切换用户启停状态。
 async function handleStatusChange(row, enabled) {
-  await updateUserStatus({
-    id: row.id,
-    status: enabled ? 1 : 0
-  })
-  ElMessage.success('状态更新成功')
+  await setUserEnabled(row.id, enabled)
+  showSuccess('状态更新成功')
   fetchTableData()
 }
 
 onMounted(async () => {
-  await Promise.all([loadDeptOptions(), loadRoleOptions(), fetchTableData()])
+  await fetchTableData()
 })
 </script>
 

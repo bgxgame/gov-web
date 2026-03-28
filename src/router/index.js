@@ -1,6 +1,8 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useSessionStore } from '../stores/session'
 
+// 静态路由表。
+// 当前系统菜单数量有限，因此采用静态路由配合 meta 菜单权限判断即可满足需求。
 const routes = [
   {
     path: '/login',
@@ -78,32 +80,23 @@ const routes = [
   }
 ]
 
+// 创建路由实例，使用 History 模式。
 const router = createRouter({
   history: createWebHistory(),
   routes
 })
 
-const menuRoutePriority = [
-  { menu: 'dashboard:view', path: '/dashboard' },
-  { menu: 'project:manage', path: '/project/manage' },
-  { menu: 'project:engineering', path: '/project/engineering' },
-  { menu: 'system:user', path: '/system/user' },
-  { menu: 'system:dept', path: '/system/dept' },
-  { menu: 'system:role', path: '/system/role' }
-]
-
-function resolveHomePath(sessionStore) {
-  const target = menuRoutePriority.find((item) => sessionStore.hasMenu(item.menu))
-  return target?.path || null
-}
-
+/**
+ * 全局前置守卫。
+ * 负责登录校验、用户信息补拉、菜单权限判断和无权限回退。
+ */
 router.beforeEach(async (to, from, next) => {
   const sessionStore = useSessionStore()
   const isPublic = Boolean(to.meta?.isPublic)
 
   if (isPublic) {
     if (to.path === '/login' && sessionStore.isAuthenticated) {
-      const homePath = resolveHomePath(sessionStore)
+      const homePath = sessionStore.homePath
       if (homePath && homePath !== '/login') {
         next(homePath)
       } else {
@@ -135,7 +128,7 @@ router.beforeEach(async (to, from, next) => {
 
   const requiredMenus = to.meta?.menus || []
   if (requiredMenus.length > 0 && !sessionStore.hasAnyMenu(requiredMenus)) {
-    const homePath = resolveHomePath(sessionStore)
+    const homePath = sessionStore.homePath
     if (!homePath) {
       await sessionStore.logout(false)
       next('/login')
@@ -152,7 +145,7 @@ router.beforeEach(async (to, from, next) => {
   const requiredRoles = to.meta?.roles || []
   const hasMenuGate = requiredMenus.length > 0
   if (!hasMenuGate && requiredRoles.length > 0 && !sessionStore.hasAnyRole(requiredRoles)) {
-    const homePath = resolveHomePath(sessionStore)
+    const homePath = sessionStore.homePath
     if (!homePath) {
       await sessionStore.logout(false)
       next('/login')

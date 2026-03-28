@@ -5,7 +5,8 @@
 </template>
 
 <script setup>
-// 引入 Element Plus 的中文包
+// App.vue 只负责承载全局 UI 容器能力，本身不承载具体业务逻辑。
+// 这里统一注入 Element Plus 中文包，让所有组件默认展示中文。
 import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
 </script>
 

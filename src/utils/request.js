@@ -1,6 +1,21 @@
 import axios from 'axios'
-import { ElMessage } from 'element-plus'
+import { getErrorMessage, showError } from './feedback'
 
+/**
+ * 职责：
+ * 提供全局统一的 Axios 实例。
+ *
+ * 为什么存在：
+ * 把 token 注入、`R(code, msg, data)` 解析、401 处理和中文错误提示收敛到一处，
+ * 避免每个页面重复写网络兜底逻辑。
+ *
+ * 关键输入输出：
+ * 输入是页面和 api 层发起的 HTTP 请求；
+ * 输出是统一解析后的业务响应，或已经翻译成中文的错误对象。
+ *
+ * 关联链路：
+ * api -> request -> 后端接口 -> 中文错误提示 / 登录失效跳转。
+ */
 const service = axios.create({
   baseURL: '/api',
   timeout: 10000
@@ -8,6 +23,10 @@ const service = axios.create({
 
 let redirectedBy401 = false
 
+/**
+ * 作用：
+ * 在请求发出前自动附带 Authorization 头。
+ */
 service.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token')
@@ -19,6 +38,13 @@ service.interceptors.request.use(
   (error) => Promise.reject(error)
 )
 
+/**
+ * 作用：
+ * 统一处理后端 `R` 响应结构和网络异常。
+ *
+ * 为什么这样做：
+ * 让页面层只关心业务成功分支，失败分支的中文提示和登录态兜底都集中在这里完成。
+ */
 service.interceptors.response.use(
   (response) => {
     const res = response.data
@@ -28,7 +54,7 @@ service.interceptors.response.use(
         localStorage.removeItem('user_info')
         if (!redirectedBy401) {
           redirectedBy401 = true
-          ElMessage.error(res.msg || '登录已失效，请重新登录')
+          showError(res.msg || '登录已失效，请重新登录')
           if (window.location.pathname !== '/login') {
             window.location.replace('/login')
           }
@@ -37,14 +63,22 @@ service.interceptors.response.use(
           }, 800)
         }
       } else {
-        ElMessage.error(res.msg || '系统错误')
+        showError(res.msg || '系统错误')
       }
-      return Promise.reject(new Error(res.msg || 'Error'))
+
+      const apiError = new Error(getErrorMessage({ response: { data: res } }))
+      apiError.code = res.code
+      apiError.msg = res.msg
+      apiError.__messageHandled = true
+      return Promise.reject(apiError)
     }
     return res
   },
   (error) => {
-    ElMessage.error('网络请求失败')
+    if (!error?.__messageHandled) {
+      showError(getErrorMessage(error, '网络请求失败'))
+      error.__messageHandled = true
+    }
     return Promise.reject(error)
   }
 )
