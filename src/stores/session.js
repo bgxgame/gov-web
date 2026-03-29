@@ -115,7 +115,8 @@ function normalizeUserInfo(data, fallbackUsername) {
 export const useSessionStore = defineStore('session', {
   state: () => ({
     token: localStorage.getItem('token') || '',
-    userInfo: parseUserInfo()
+    userInfo: parseUserInfo(),
+    _userInfoPromise: null
   }),
   getters: {
     isAuthenticated: (state) => Boolean(state.token),
@@ -188,6 +189,32 @@ export const useSessionStore = defineStore('session', {
       if (!this.token) return
       const res = await getCurrentUser()
       this.setUserInfo(normalizeUserInfo(res.data))
+    },
+
+    /**
+     * 作用：
+     * 确保当前用户信息已就绪；若尚未加载或需要强制刷新，则只发起一次请求。
+     */
+    async ensureUserInfo(forceRefresh = false) {
+      if (!this.token) return null
+      const hasUserInfoReady =
+        !forceRefresh &&
+        this.userInfo &&
+        Array.isArray(this.userInfo.roleCodes) &&
+        Array.isArray(this.userInfo.menuKeys)
+      if (hasUserInfoReady) return this.userInfo
+
+      if (!this._userInfoPromise) {
+        this._userInfoPromise = getCurrentUser()
+          .then((res) => {
+            this.setUserInfo(normalizeUserInfo(res.data, this.userInfo?.username))
+            return this.userInfo
+          })
+          .finally(() => {
+            this._userInfoPromise = null
+          })
+      }
+      return this._userInfoPromise
     },
 
     /**

@@ -131,47 +131,33 @@ router.beforeEach(async (to, from, next) => {
     return
   }
 
-  const needRefreshUserInfo =
-    !sessionStore.userInfo ||
-    !Array.isArray(sessionStore.userInfo.roleCodes) ||
-    !Array.isArray(sessionStore.userInfo.menuKeys)
-  if (needRefreshUserInfo) {
-    try {
-      await sessionStore.refreshUserInfo()
-    } catch (error) {
-      next('/login')
-      return
-    }
+  try {
+    await sessionStore.ensureUserInfo()
+  } catch (error) {
+    next('/login')
+    return
   }
 
   const requiredMenus = to.meta?.menus || []
   if (requiredMenus.length > 0 && !sessionStore.hasAnyMenu(requiredMenus)) {
-    // 对首登/权限刚变化的场景做一次自愈刷新，避免误判后直接被重定向回首页。
+    // 权限不足时做一次强制刷新，若仍无权限则停留在当前页并给出提示，避免反复跳回首页。
     try {
-      await sessionStore.refreshUserInfo()
+      await sessionStore.ensureUserInfo(true)
     } catch (error) {
-      // ignore
-    }
-    if (sessionStore.hasAnyMenu(requiredMenus)) {
-      next()
-      return
-    }
-
-    const homePath = sessionStore.homePath
-    if (!homePath) {
-      await sessionStore.logout(false)
       next('/login')
       return
     }
-    if (from.path && from.path !== '/login' && from.path !== to.path) {
-      next(false)
+    if (!sessionStore.hasAnyMenu(requiredMenus)) {
+      showError('当前账号暂无权限访问该页面')
+      const homePath = sessionStore.homePath
+      if (homePath && homePath !== to.path) {
+        next(homePath)
+      } else {
+        next(false)
+      }
       return
     }
-    if (homePath === to.path) {
-      next(false)
-      return
-    }
-    next(homePath)
+    next()
     return
   }
 
