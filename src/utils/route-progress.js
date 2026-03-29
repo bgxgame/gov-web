@@ -1,3 +1,4 @@
+import { appConfig } from '../config/app-config'
 import { logger } from './logger'
 
 const PROGRESS_BAR_ID = 'route-progress-bar'
@@ -17,6 +18,7 @@ export function startRouteProgress() {
   const currentToken = activeToken
   startedAt = Date.now()
   const bar = ensureProgressBar()
+  document.body.classList.add('route-pending')
   bar.style.opacity = '1'
   setProgress(bar, 18)
 
@@ -41,10 +43,11 @@ export function finishRouteProgress(token, options = {}) {
   window.setTimeout(() => {
     bar.style.opacity = '0'
     setProgress(bar, 0)
+    document.body.classList.remove('route-pending')
   }, 220)
 
   const durationMs = Date.now() - startedAt
-  if (durationMs > 800) {
+  if (durationMs >= appConfig.slowRouteThreshold) {
     logger.warn('页面路由加载耗时偏高', { durationMs, hasError })
   } else {
     logger.debug('页面路由加载完成', { durationMs, hasError })

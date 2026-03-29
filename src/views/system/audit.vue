@@ -1,7 +1,7 @@
 <template>
   <div class="app-container">
     <el-card class="filter-card" shadow="never">
-      <el-form :inline="true" :model="queryForm" class="query-form">
+      <el-form :inline="true" :model="queryForm" class="query-form" @submit.prevent="handleQuery">
         <el-form-item label="请求时间">
           <el-date-picker
             v-model="queryForm.timeRange"
@@ -35,15 +35,22 @@
           <el-input v-model="queryForm.durationMax" placeholder="最大" clearable style="width: 100px" />
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="handleQuery">查询</el-button>
-          <el-button @click="handleReset">重置</el-button>
+          <el-button type="primary" native-type="submit" :loading="loading" @click="handleQuery">查询</el-button>
+          <el-button :disabled="loading" @click="handleReset">重置</el-button>
         </el-form-item>
       </el-form>
     </el-card>
 
     <el-card class="table-card" shadow="never">
       <div class="table-wrap">
-        <el-table :data="tableData" border v-loading="loading" height="100%">
+        <el-table
+          :data="tableData"
+          border
+          v-loading="loading"
+          height="100%"
+          element-loading-text="正在加载审计日志..."
+          empty-text="暂无审计日志"
+        >
           <el-table-column prop="requestTime" label="请求时间" min-width="170" />
           <el-table-column label="操作用户" min-width="160">
             <template #default="{ row }">
@@ -84,6 +91,7 @@
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
 import { fetchAuditPageByForm } from '../../api/system'
+import { useActivatedRefresh } from '../../utils/activated-refresh'
 import { showWarning } from '../../utils/feedback'
 
 // 审计日志管理页：筛选项与表格字段按契约一一对应，减少认知负担。
@@ -91,6 +99,7 @@ const requestMethodOptions = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH']
 
 const loading = ref(false)
 const tableData = ref([])
+const tableFetchSeq = ref(0)
 const queryForm = reactive({
   keyword: '',
   deptName: '',
@@ -109,15 +118,25 @@ const pagination = reactive({
 
 // 拉取审计分页数据。
 async function fetchTableData() {
+  const currentFetchSeq = ++tableFetchSeq.value
   loading.value = true
   try {
     const res = await fetchAuditPageByForm(queryForm, pagination)
+    if (currentFetchSeq !== tableFetchSeq.value) return
     tableData.value = res.data?.records || []
     pagination.total = Number(res.data?.total || 0)
+    markRefreshed()
   } finally {
-    loading.value = false
+    if (currentFetchSeq === tableFetchSeq.value) {
+      loading.value = false
+    }
   }
 }
+
+const { markRefreshed } = useActivatedRefresh(fetchTableData, {
+  minIntervalMs: 15000,
+  shouldRefresh: () => !loading.value
+})
 
 // 以当前筛选条件重新查询第一页。
 function handleQuery() {

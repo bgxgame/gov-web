@@ -1,7 +1,7 @@
 <template>
   <div class="app-container">
     <el-card class="filter-card" shadow="never">
-      <el-form :inline="true" :model="queryForm">
+      <el-form :inline="true" :model="queryForm" @submit.prevent="handleQuery">
         <el-form-item label="用户名">
           <el-input v-model="queryForm.username" placeholder="请输入用户名" clearable />
         </el-form-item>
@@ -15,15 +15,21 @@
           </el-select>
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="handleQuery">查询</el-button>
-          <el-button @click="handleReset">重置</el-button>
-          <el-button v-if="canManageUsers" type="success" @click="openCreateDialog">新增用户</el-button>
+          <el-button type="primary" native-type="submit" :loading="loading" @click="handleQuery">查询</el-button>
+          <el-button :disabled="loading" @click="handleReset">重置</el-button>
+          <el-button v-if="canManageUsers" type="success" :disabled="loading" @click="openCreateDialog">新增用户</el-button>
         </el-form-item>
       </el-form>
     </el-card>
 
     <el-card shadow="never">
-      <el-table :data="tableData" border v-loading="loading">
+      <el-table
+        :data="tableData"
+        border
+        v-loading="loading"
+        element-loading-text="正在加载用户列表..."
+        empty-text="暂无用户数据"
+      >
         <el-table-column prop="username" label="用户名" min-width="120" />
         <el-table-column prop="realName" label="姓名" min-width="120" />
         <el-table-column prop="deptName" label="部门" min-width="130" />
@@ -64,7 +70,7 @@
     </el-card>
 
     <el-dialog v-model="dialog.visible" :title="dialog.mode === 'create' ? '新增用户' : '编辑用户'" width="560px">
-      <el-form :model="dialog.form" label-width="90px" v-loading="dialog.loadingOptions">
+      <el-form :model="dialog.form" label-width="90px" v-loading="dialog.loadingOptions" @submit.prevent="handleSave">
         <el-form-item label="用户名" required>
           <el-input v-model="dialog.form.username" :disabled="dialog.mode === 'edit'" />
         </el-form-item>
@@ -106,7 +112,7 @@
       </el-form>
       <template #footer>
         <el-button @click="dialog.visible = false">取消</el-button>
-        <el-button type="primary" :loading="dialog.saving" @click="handleSave">保存</el-button>
+        <el-button type="primary" native-type="submit" :loading="dialog.saving" @click="handleSave">保存</el-button>
       </template>
     </el-dialog>
   </div>
@@ -124,6 +130,7 @@ import {
   setUserEnabled
 } from '../../api/system'
 import { showSuccess, showWarning } from '../../utils/feedback'
+import { useActivatedRefresh } from '../../utils/activated-refresh'
 import { createEmptyUserForm, flattenDeptOptions, normalizeUserForm } from '../../utils/system-models'
 
 // 用户管理页：负责用户分页、编辑、状态切换和角色配置。
@@ -213,12 +220,18 @@ async function fetchTableData(options = {}) {
     if (currentFetchSeq !== tableFetchSeq.value) return
     tableData.value = res.data?.records || []
     pagination.total = Number(res.data?.total || 0)
+    markRefreshed()
   } finally {
     if (!silent && currentFetchSeq === tableFetchSeq.value) {
       loading.value = false
     }
   }
 }
+
+const { markRefreshed } = useActivatedRefresh(() => fetchTableData({ silent: true }), {
+  minIntervalMs: 12000,
+  shouldRefresh: () => !dialog.visible && !dialog.saving && !loading.value
+})
 
 // 以当前查询条件重新查第一页。
 function handleQuery() {

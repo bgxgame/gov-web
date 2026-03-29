@@ -8,12 +8,13 @@ import { describe, expect, it, vi } from 'vitest'
  * 关联链路：登录、会话落盘、首页跳转。
  */
 
-const push = vi.fn()
+const replace = vi.fn()
 const login = vi.fn()
 const showSuccess = vi.fn()
+const showWarning = vi.fn()
 
 vi.mock('vue-router', () => ({
-  useRouter: () => ({ push })
+  useRouter: () => ({ replace })
 }))
 
 vi.mock('../../src/stores/session', () => ({
@@ -24,7 +25,8 @@ vi.mock('../../src/stores/session', () => ({
 }))
 
 vi.mock('../../src/utils/feedback', () => ({
-  showSuccess
+  showSuccess,
+  showWarning
 }))
 
 const ElInputStub = {
@@ -68,6 +70,6 @@ describe('login view', () => {
 
     expect(login).toHaveBeenCalledWith({ username: 'admin', password: 'secret' })
     expect(showSuccess).toHaveBeenCalled()
-    expect(push).toHaveBeenCalledWith('/project/manage')
+    expect(replace).toHaveBeenCalledWith('/project/manage')
   })
 })

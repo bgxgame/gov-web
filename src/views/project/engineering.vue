@@ -4,13 +4,21 @@
       <template #header>
         <div class="card-header">
           <span>审批任务中心</span>
-          <el-button type="primary" @click="refreshCurrentTab">刷新</el-button>
+          <el-button type="primary" :loading="isCurrentTabLoading" :disabled="approveLoadingTaskId !== null" @click="refreshCurrentTab">
+            刷新
+          </el-button>
         </div>
       </template>
 
       <el-tabs v-model="activeTab" @tab-change="handleTabChange">
         <el-tab-pane label="我的待办" name="todo">
-          <el-table :data="todoList" border v-loading="loading.todo">
+          <el-table
+            :data="todoList"
+            border
+            v-loading="loading.todo"
+            element-loading-text="正在加载待办任务..."
+            empty-text="暂无待办任务"
+          >
             <el-table-column prop="taskName" label="任务名称" min-width="140" />
             <el-table-column prop="projectName" label="项目名称" min-width="180" />
             <el-table-column prop="leaderName" label="项目负责人" min-width="120" />
@@ -53,7 +61,13 @@
         </el-tab-pane>
 
         <el-tab-pane label="我的已办" name="done">
-          <el-table :data="doneList" border v-loading="loading.done">
+          <el-table
+            :data="doneList"
+            border
+            v-loading="loading.done"
+            element-loading-text="正在加载已办任务..."
+            empty-text="暂无已办任务"
+          >
             <el-table-column prop="taskName" label="任务名称" min-width="140" />
             <el-table-column prop="projectName" label="项目名称" min-width="180" />
             <el-table-column prop="leaderName" label="项目负责人" min-width="120" />
@@ -79,9 +93,10 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { approveTaskDecision, fetchDonePage, fetchTodoPage } from '../../api/flow'
-import { confirmAction, showSuccess } from '../../utils/feedback'
+import { useActivatedRefresh } from '../../utils/activated-refresh'
+import { confirmAction, handleActionError, showSuccess } from '../../utils/feedback'
 
 // 审批任务中心：负责展示我的待办、我的已办，并提交审批结果。
 const activeTab = ref('todo')
@@ -116,11 +131,15 @@ const pagination = reactive({
     total: 0
   }
 })
+const isCurrentTabLoading = computed(() => (activeTab.value === 'done' ? loading.done : loading.todo))
 
 // 拉取待办分页，并更新待办 tab 的加载状态与脏标记。
-async function fetchTodo() {
+async function fetchTodo(options = {}) {
+  const { silent = false } = options
   const currentSeq = ++tabFetchSeq.todo
-  loading.todo = true
+  if (!silent) {
+    loading.todo = true
+  }
   try {
     const res = await fetchTodoPage(pagination.todo)
     if (currentSeq !== tabFetchSeq.todo) return
@@ -128,17 +147,21 @@ async function fetchTodo() {
     pagination.todo.total = Number(res.data?.total || 0)
     loadedTabs.todo = true
     staleTabs.todo = false
+    markRefreshed()
   } finally {
-    if (currentSeq === tabFetchSeq.todo) {
+    if (!silent && currentSeq === tabFetchSeq.todo) {
       loading.todo = false
     }
   }
 }
 
 // 拉取已办分页，并更新已办 tab 的加载状态与脏标记。
-async function fetchDone() {
+async function fetchDone(options = {}) {
+  const { silent = false } = options
   const currentSeq = ++tabFetchSeq.done
-  loading.done = true
+  if (!silent) {
+    loading.done = true
+  }
   try {
     const res = await fetchDonePage(pagination.done)
     if (currentSeq !== tabFetchSeq.done) return
@@ -146,8 +169,9 @@ async function fetchDone() {
     pagination.done.total = Number(res.data?.total || 0)
     loadedTabs.done = true
     staleTabs.done = false
+    markRefreshed()
   } finally {
-    if (currentSeq === tabFetchSeq.done) {
+    if (!silent && currentSeq === tabFetchSeq.done) {
       loading.done = false
     }
   }
@@ -161,6 +185,22 @@ async function refreshCurrentTab() {
   }
   await fetchTodo()
 }
+
+const { markRefreshed } = useActivatedRefresh(
+  async () => {
+    if (activeTab.value === 'done') {
+      staleTabs.done = true
+      await fetchDone({ silent: true })
+      return
+    }
+    staleTabs.todo = true
+    await fetchTodo({ silent: true })
+  },
+  {
+    minIntervalMs: 10000,
+    shouldRefresh: () => approveLoadingTaskId.value === null && !loading.todo && !loading.done
+  }
+)
 
 // tab 切换时按需懒加载数据，避免首屏一次性把两页都打满。
 async function handleTabChange(name) {
@@ -192,7 +232,7 @@ async function handleApprove(row, approved) {
     staleTabs.done = true
     await refreshCurrentTab()
   } catch (error) {
-    // 用户取消时不提示
+    handleActionError(error, '审批操作失败，请稍后重试')
   } finally {
     approveLoadingTaskId.value = null
   }

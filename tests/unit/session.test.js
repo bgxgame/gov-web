@@ -47,6 +47,7 @@ describe('session store', () => {
     expect(store.userInfo.roleCodes).toEqual(['admin', 'user'])
     expect(store.userInfo.menuKeys).toEqual(['dashboard:view', 'system:user'])
     expect(store.homePath).toBe('/dashboard')
+    expect(getCurrentUser).not.toHaveBeenCalled()
     expect(JSON.parse(window.localStorage.getItem('user_info')).menuKeys).toEqual(['dashboard:view', 'system:user'])
   })
 

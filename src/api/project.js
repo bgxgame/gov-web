@@ -12,7 +12,7 @@ import {
  */
 
 /** 按原始参数调用项目分页接口。 */
-export const getProjectPage = (params) => request.get('/project/page', { params })
+export const getProjectPage = (params, config = {}) => request.get('/project/page', { params, cancelKey: 'project:page', ...config })
 
 /** 获取项目详情。 */
 export const getProjectDetail = (id) => request.get(`/project/get/${id}`)
@@ -30,7 +30,8 @@ export const deleteProject = (id) => request.delete(`/project/${id}`)
 export const submitProject = (payload) => request.post('/project/submit', payload)
 
 /** 获取地图点位列表。 */
-export const getProjectMapList = (params) => request.get('/project/map/list', { params })
+export const getProjectMapList = (params, config = {}) =>
+  request.get('/project/map/list', { params, cancelKey: 'project:map-list', ...config })
 
 /**
  * 根据页面查询表单与分页对象查询项目列表。
@@ -39,7 +40,8 @@ export const getProjectMapList = (params) => request.get('/project/map/list', { 
  * @param {{ pageNum:number, pageSize:number }} pagination 分页对象
  * @returns {Promise<any>} 分页响应
  */
-export const fetchProjectPageByForm = (queryForm, pagination) => getProjectPage(buildProjectPageParams(queryForm, pagination))
+export const fetchProjectPageByForm = (queryForm, pagination, config) =>
+  getProjectPage(buildProjectPageParams(queryForm, pagination), config)
 
 /**
  * 根据项目表单自动决定走新增还是更新接口。
@@ -66,4 +68,4 @@ export const submitProjectById = (projectId) => submitProject(buildProjectSubmit
  * @param {Record<string, unknown>} filters 地图筛选条件
  * @returns {Promise<any>} 地图响应
  */
-export const fetchProjectMapListByFilters = (filters) => getProjectMapList(buildProjectMapParams(filters))
+export const fetchProjectMapListByFilters = (filters, config) => getProjectMapList(buildProjectMapParams(filters), config)

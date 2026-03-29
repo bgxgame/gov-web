@@ -3,7 +3,7 @@
     <el-aside :width="isCollapse ? '64px' : '220px'" class="aside-container">
       <div class="aside-content">
         <div class="aside-logo">
-          <span v-if="!isCollapse">信创政务系统</span>
+          <span v-if="!isCollapse" class="logo-title">信创政务管理系统</span>
           <el-icon class="toggle-icon" @click="isCollapse = !isCollapse">
             <Expand v-if="isCollapse" />
             <Fold v-else />
@@ -11,14 +11,15 @@
         </div>
 
         <el-menu
-          :default-active="$route.path"
+          :default-active="activeMenuPath"
           class="aside-menu"
           background-color="#304156"
           text-color="#bfcbd9"
           active-text-color="#409EFF"
           :collapse="isCollapse"
           :collapse-transition="false"
-          router
+          :unique-opened="true"
+          @select="handleMenuSelect"
         >
           <el-menu-item v-if="canVisitMenu('dashboard:view')" index="/dashboard">
             <el-icon><HomeFilled /></el-icon>
@@ -28,7 +29,7 @@
           <el-sub-menu v-if="canVisitMenu('project:manage') || canVisitMenu('project:engineering')" index="project">
             <template #title>
               <el-icon><Management /></el-icon>
-              <span>工程管理</span>
+              <span>项目管理</span>
             </template>
             <el-menu-item v-if="canVisitMenu('project:manage')" index="/project/manage">项目管理</el-menu-item>
             <el-menu-item v-if="canVisitMenu('project:engineering')" index="/project/engineering">工程进度</el-menu-item>
@@ -42,12 +43,8 @@
             <el-menu-item v-if="canVisitMenu('system:user')" index="/system/user">用户管理</el-menu-item>
             <el-menu-item v-if="canVisitMenu('system:dept')" index="/system/dept">部门管理</el-menu-item>
             <el-menu-item v-if="canVisitMenu('system:role')" index="/system/role">角色管理</el-menu-item>
-            <el-menu-item
-              v-if="canVisitMenu('system:audit')"
-              index="/system/audit"
-            >
-              审计日志
-            </el-menu-item>
+            <el-menu-item v-if="canVisitMenu('system:audit')" index="/system/audit">审计日志</el-menu-item>
+            <el-menu-item v-if="canVisitMenu('system:frontend-monitor')" index="/system/frontend-monitor">前端监控</el-menu-item>
           </el-sub-menu>
         </el-menu>
 
@@ -55,7 +52,7 @@
           <el-dropdown trigger="click" placement="right-end">
             <div class="user-profile-trigger">
               <el-avatar :size="32" icon="UserFilled" />
-              <span class="username" v-if="!isCollapse">{{ displayName }}</span>
+              <span v-if="!isCollapse" class="username">{{ displayName }}</span>
             </div>
             <template #dropdown>
               <el-dropdown-menu>
@@ -71,7 +68,20 @@
     </el-aside>
 
     <el-main class="main-container">
-      <router-view />
+      <router-view v-slot="{ Component, route }">
+        <keep-alive :include="cachedViewNames">
+          <component
+            v-if="Component && shouldKeepAliveRoute(route)"
+            :is="Component"
+            :key="route.name || route.path"
+          />
+        </keep-alive>
+        <component
+          :is="Component"
+          v-if="Component && !shouldKeepAliveRoute(route)"
+          :key="route.fullPath"
+        />
+      </router-view>
     </el-main>
   </el-container>
 
@@ -82,7 +92,7 @@
     :close-on-click-modal="false"
     append-to-body
   >
-    <div class="logout-tip">确定退出当前账号吗？</div>
+    <div class="logout-tip">确认退出当前账号吗？</div>
     <template #footer>
       <el-button @click="logoutDialogVisible = false">取消</el-button>
       <el-button type="primary" @click="confirmLogout">确定退出</el-button>
@@ -92,35 +102,96 @@
 
 <script setup>
 import { computed, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { Expand, Fold, HomeFilled, Management, Setting, SwitchButton } from '@element-plus/icons-vue'
 import { useSessionStore } from '../stores/session'
 import { showSuccess } from '../utils/feedback'
+import { logUserAction, logger } from '../utils/logger'
+import { CACHEABLE_VIEW_NAMES, shouldKeepAliveRoute } from '../utils/router-cache'
 
-// 布局壳层：承载左侧菜单、顶部用户入口和页面容器。
+/**
+ * 职责：承载系统主布局，统一处理侧边菜单、页面缓存和退出登录交互。
+ * 为什么存在：避免每个业务页重复维护菜单权限、布局结构和会话操作入口。
+ * 关键输入输出：输入为当前路由、当前用户菜单权限和缓存策略；输出为侧边导航与主内容区。
+ * 关联链路：登录成功 -> 主布局 -> 菜单切换 -> 页面缓存复用。
+ */
 const isCollapse = ref(false)
 const logoutDialogVisible = ref(false)
+const navigatingPath = ref('')
 const router = useRouter()
+const route = useRoute()
 const sessionStore = useSessionStore()
 
-// 展示名优先使用真实姓名，兜底使用用户名。
+const cachedViewNames = CACHEABLE_VIEW_NAMES
+const activeMenuPath = computed(() => route.path)
 const displayName = computed(() => sessionStore.userInfo?.realName || sessionStore.userInfo?.username || '管理员')
-// 判断单个菜单是否可见。
-const canVisitMenu = (menuKey) => sessionStore.hasMenu(menuKey)
-// 判断是否显示系统设置分组。
-const hasSystemMenus = computed(() => sessionStore.hasAnyMenu(['system:user', 'system:dept', 'system:role', 'system:audit']))
+const hasSystemMenus = computed(() =>
+  sessionStore.hasAnyMenu(['system:user', 'system:dept', 'system:role', 'system:audit', 'system:frontend-monitor'])
+)
 
-// 打开退出登录确认框。
-const handleLogout = () => {
+function canVisitMenu(menuKey) {
+  return sessionStore.hasMenu(menuKey)
+}
+
+/**
+ * 作用：统一处理菜单跳转，跳过重复导航，避免快速点击时产生无意义的路由切换。
+ */
+async function handleMenuSelect(index) {
+  if (!index || route.path === index || navigatingPath.value === index) {
+    logUserAction('menu_skip', {
+      currentPath: route.path,
+      targetPath: index,
+      reason: !index ? 'empty_target' : route.path === index ? 'same_route' : 'navigation_pending'
+    }, 'debug')
+    return
+  }
+
+  const fromPath = route.path
+  logUserAction('menu_select', {
+    fromPath,
+    targetPath: index
+  })
+  navigatingPath.value = index
+  try {
+    await router.push(index)
+    logUserAction('menu_select_success', {
+      fromPath,
+      targetPath: index
+    }, 'debug')
+  } catch (error) {
+    logger.warn('菜单跳转失败', {
+      fromPath,
+      targetPath: index,
+      message: error?.message
+    })
+  } finally {
+    if (navigatingPath.value === index) {
+      navigatingPath.value = ''
+    }
+  }
+}
+
+/**
+ * 作用：先打开确认框，再执行真正的退出动作，避免误触退出。
+ */
+function handleLogout() {
+  logUserAction('logout_dialog_open', {
+    currentPath: route.path
+  }, 'debug')
   logoutDialogVisible.value = true
 }
 
-// 确认退出登录，清理本地会话并跳转登录页。
-const confirmLogout = async () => {
+/**
+ * 作用：退出时清理本地会话并使用 replace 回到登录页，避免后退回到受保护页面。
+ */
+async function confirmLogout() {
+  logUserAction('logout_confirm', {
+    currentPath: route.path
+  })
   await sessionStore.logout()
   logoutDialogVisible.value = false
   showSuccess('已退出登录')
-  router.push('/login')
+  await router.replace('/login')
 }
 </script>
 
@@ -150,9 +221,13 @@ const confirmLogout = async () => {
   align-items: center;
   justify-content: space-around;
   color: #fff;
-  font-weight: bold;
+  font-weight: 700;
   background-color: #2b2f3a;
   overflow: hidden;
+}
+
+.logo-title {
+  letter-spacing: 1px;
 }
 
 .toggle-icon {

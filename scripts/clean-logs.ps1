@@ -1,5 +1,6 @@
 param(
-    [int]$KeepDays = 7
+    [int]$KeepDays = 7,
+    [int]$TotalSizeCapMb = 200
 )
 
 $logDir = Join-Path $PSScriptRoot "..\\logs"
@@ -10,4 +11,18 @@ if (-not (Test-Path $logDir)) {
 
 $deadline = (Get-Date).AddDays(-$KeepDays)
 Get-ChildItem -Path $logDir -File | Where-Object { $_.LastWriteTime -lt $deadline } | Remove-Item -Force
-Write-Output "已清理 $KeepDays 天前的前端日志文件。"
+
+$totalSizeCapBytes = [long]$TotalSizeCapMb * 1MB
+$files = Get-ChildItem -Path $logDir -File | Sort-Object LastWriteTime
+$totalSize = ($files | Measure-Object -Property Length -Sum).Sum
+if ($totalSize) {
+    foreach ($file in $files) {
+        if ($totalSize -le $totalSizeCapBytes) {
+            break
+        }
+        $totalSize -= $file.Length
+        Remove-Item -LiteralPath $file.FullName -Force -ErrorAction SilentlyContinue
+    }
+}
+
+Write-Output ("Cleaned frontend logs with keepDays={0}, totalSizeCapMb={1}." -f $KeepDays, $TotalSizeCapMb)

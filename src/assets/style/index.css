@@ -48,3 +48,9 @@ html, body, #app {
     max-width: min(460px, calc(100vw - 24px));
     word-break: break-word;
 }
+
+/* 路由切换期间给出轻量级“处理中”反馈，缓解菜单点击后无感知的问题。 */
+body.route-pending,
+body.route-pending * {
+    cursor: progress !important;
+}

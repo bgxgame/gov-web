@@ -3,20 +3,6 @@ import { getCurrentUser, login as loginApi, logout as logoutApi } from '../api/a
 
 const USER_KEY = 'user_info'
 
-/**
- * 职责：
- * 维护登录态、当前用户信息、角色码、菜单权限和默认首页。
- *
- * 为什么存在：
- * 把“认证态”和“权限态”统一收在一个 store 中，避免页面和路由重复处理会话细节。
- *
- * 关键输入输出：
- * 输入来自登录接口、`/system/me` 和本地存储；
- * 输出给路由守卫、布局菜单和页面按钮权限判断。
- *
- * 关联链路：
- * 登录 -> 初始化用户信息 -> 计算默认首页 -> 路由权限判断。
- */
 const MENU_ROUTE_PRIORITY = [
   { menu: 'dashboard:view', path: '/dashboard' },
   { menu: 'project:manage', path: '/project/manage' },
@@ -24,15 +10,15 @@ const MENU_ROUTE_PRIORITY = [
   { menu: 'system:user', path: '/system/user' },
   { menu: 'system:dept', path: '/system/dept' },
   { menu: 'system:role', path: '/system/role' },
-  { menu: 'system:audit', path: '/system/audit' }
+  { menu: 'system:audit', path: '/system/audit' },
+  { menu: 'system:frontend-monitor', path: '/system/frontend-monitor' }
 ]
 
 /**
- * 作用：
- * 把后端或历史数据里可能存在的多种角色编码写法统一成标准值。
- *
- * 为什么这样做：
- * 这样前端判断角色时只需要认识 `admin / dept_leader / user` 这一套编码。
+ * 职责：标准化历史角色编码，统一成前端只关心的 `admin / dept_leader / user`。
+ * 为什么存在：后端或历史数据里可能混用多种角色编码写法，前端不应到处兼容。
+ * 关键输入输出：输入为任意角色编码字符串，输出为标准化后的角色编码或 `null`。
+ * 关联链路：登录、/system/me、菜单权限判断、页面按钮权限判断。
  */
 function normalizeRoleCode(roleCode) {
   const raw = String(roleCode || '').trim().toLowerCase()
@@ -46,11 +32,10 @@ function normalizeRoleCode(roleCode) {
 }
 
 /**
- * 作用：
- * 标准化角色数组，并确保始终包含基础 `user` 角色。
- *
- * 输出：
- * 去重后的标准角色码数组。
+ * 职责：标准化角色数组并确保始终保留基础 `user` 角色。
+ * 为什么存在：即使后端未显式返回普通用户角色，前端权限模型也需要保持稳定。
+ * 关键输入输出：输入为角色数组，输出为去重后的标准角色数组。
+ * 关联链路：路由守卫、侧边栏菜单、页面操作权限。
  */
 function normalizeRoleCodes(roleCodes) {
   if (!Array.isArray(roleCodes)) return []
@@ -60,8 +45,10 @@ function normalizeRoleCodes(roleCodes) {
 }
 
 /**
- * 作用：
- * 标准化菜单权限数组，去空值并去重。
+ * 职责：标准化菜单权限数组。
+ * 为什么存在：去空值、去空白、去重，避免历史脏数据影响菜单显示和权限判断。
+ * 关键输入输出：输入为菜单键数组，输出为规范化后的菜单键数组。
+ * 关联链路：主布局菜单、默认首页解析、页面访问权限。
  */
 function normalizeMenuKeys(menuKeys) {
   if (!Array.isArray(menuKeys)) return []
@@ -69,11 +56,10 @@ function normalizeMenuKeys(menuKeys) {
 }
 
 /**
- * 作用：
- * 从本地存储恢复用户信息，并顺手完成角色/菜单标准化。
- *
- * 输出：
- * 标准化后的用户信息对象，或 `null`。
+ * 职责：从本地存储恢复用户信息并完成标准化。
+ * 为什么存在：刷新浏览器后需要尽快恢复会话，不应等接口返回后才具备基本权限信息。
+ * 关键输入输出：输入为 localStorage 中的原始 JSON，输出为标准化后的用户对象或 `null`。
+ * 关联链路：页面刷新、登录后回显、路由守卫初始化。
  */
 function parseUserInfo() {
   const raw = localStorage.getItem(USER_KEY)
@@ -91,14 +77,10 @@ function parseUserInfo() {
 }
 
 /**
- * 作用：
- * 规范化后端返回的当前用户载荷，作为 store 内部统一结构。
- *
- * 输入：
- * 登录或 `/me` 接口返回的数据。
- *
- * 输出：
- * 带标准角色码和菜单键的用户对象。
+ * 职责：把登录或 `/system/me` 返回的用户载荷规整成 store 内部统一结构。
+ * 为什么存在：前端后续逻辑不应该关心接口是否缺省了某些字段或角色编码是否规范。
+ * 关键输入输出：输入为接口返回数据和可选兜底用户名，输出为标准化用户对象。
+ * 关联链路：登录、会话恢复、权限刷新。
  */
 function normalizeUserInfo(data, fallbackUsername) {
   return {
@@ -112,6 +94,16 @@ function normalizeUserInfo(data, fallbackUsername) {
   }
 }
 
+function hasCompleteUserInfoPayload(data) {
+  return Array.isArray(data?.roleCodes) && Array.isArray(data?.menuKeys)
+}
+
+/**
+ * 职责：统一维护登录态、当前用户信息、菜单权限和默认首页。
+ * 为什么存在：把“认证态”和“权限态”集中在一个 store 中，避免页面和路由各自维护会话细节。
+ * 关键输入输出：输入来自登录接口、/system/me 和本地缓存；输出给路由守卫、布局菜单和页面权限判断。
+ * 关联链路：登录 -> 初始化用户信息 -> 计算默认首页 -> 路由权限判断。
+ */
 export const useSessionStore = defineStore('session', {
   state: () => ({
     token: localStorage.getItem('token') || '',
@@ -127,8 +119,10 @@ export const useSessionStore = defineStore('session', {
   },
   actions: {
     /**
-     * 作用：
-     * 设置并持久化 token。
+     * 职责：设置并持久化 token。
+     * 为什么存在：统一 token 写入和清理入口，避免页面直接操作 localStorage。
+     * 关键输入输出：输入为 token 字符串，输出为更新后的会话状态。
+     * 关联链路：登录、401 清理、退出登录。
      */
     setToken(token) {
       this.token = token || ''
@@ -140,8 +134,10 @@ export const useSessionStore = defineStore('session', {
     },
 
     /**
-     * 作用：
-     * 设置并持久化当前用户信息。
+     * 职责：设置并持久化当前用户信息。
+     * 为什么存在：统一 user_info 的写入格式，避免本地缓存结构漂移。
+     * 关键输入输出：输入为标准化用户对象或 `null`，输出为更新后的用户信息状态。
+     * 关联链路：登录、会话恢复、权限刷新、退出登录。
      */
     setUserInfo(userInfo) {
       this.userInfo = userInfo || null
@@ -153,73 +149,92 @@ export const useSessionStore = defineStore('session', {
     },
 
     /**
-     * 作用：
-     * 清理本地会话信息。
+     * 职责：清理本地会话状态。
+     * 为什么存在：退出登录、401 失效或强制回到登录页时都需要统一复用这套清理逻辑。
+     * 关键输入输出：输入为空，输出为 token、用户信息和补拉 Promise 被重置。
+     * 关联链路：退出登录、401、权限恢复失败兜底。
      */
     clearSession() {
+      this._userInfoPromise = null
       this.setToken('')
       this.setUserInfo(null)
     },
 
     /**
-     * 作用：
-     * 执行登录并同步初始化会话。
-     *
-     * 关联链路：
-     * 登录页 -> store.login -> 路由跳转到默认首页。
+     * 职责：执行登录并初始化完整会话。
+     * 为什么存在：统一处理 token 落盘、用户信息标准化以及必要时的 `/system/me` 补拉。
+     * 关键输入输出：输入为登录表单，输出为登录接口响应。
+     * 关联链路：登录页 -> store.login -> 计算默认首页 -> 主布局。
      */
     async login(payload) {
       const res = await loginApi(payload)
       this.setToken(res.data.tokenValue)
       this.setUserInfo(normalizeUserInfo(res.data, payload.username))
-      // 登录响应通常已包含权限信息；这里再补一次 /system/me，确保首登后的菜单权限状态与后端完全一致。
-      try {
-        await this.refreshUserInfo()
-      } catch (error) {
-        // 补拉失败时保留登录响应里的用户上下文，避免影响主登录流程。
+
+      if (!hasCompleteUserInfoPayload(res.data)) {
+        try {
+          await this.refreshUserInfo()
+        } catch (error) {
+          // 登录主流程优先，补拉失败时先保留登录接口返回的上下文。
+        }
       }
+
       return res
     },
 
     /**
-     * 作用：
-     * 在已有 token 的前提下刷新当前用户信息。
+     * 职责：显式刷新当前登录用户信息。
+     * 为什么存在：某些权限或菜单变更后需要强制以服务端结果为准。
+     * 关键输入输出：输入为空，输出为刷新后的用户对象。
+     * 关联链路：权限刷新、菜单恢复、调试与回归验证。
      */
     async refreshUserInfo() {
-      if (!this.token) return
+      if (!this.token) return null
       const res = await getCurrentUser()
-      this.setUserInfo(normalizeUserInfo(res.data))
+      const userInfo = normalizeUserInfo(res.data, this.userInfo?.username)
+      this.setUserInfo(userInfo)
+      return userInfo
     },
 
     /**
-     * 作用：
-     * 确保当前用户信息已就绪；若尚未加载或需要强制刷新，则只发起一次请求。
+     * 职责：确保当前用户信息已就绪，并对同一时刻的重复补拉做单航复用。
+     * 为什么存在：路由守卫和页面恢复经常会并发请求 `/system/me`，需要避免重复打接口。
+     * 关键输入输出：输入为是否强制刷新，输出为当前用户对象或 `null`。
+     * 关联链路：路由守卫、菜单切换、刷新页面后的权限恢复。
      */
     async ensureUserInfo(forceRefresh = false) {
       if (!this.token) return null
+
       const hasUserInfoReady =
         !forceRefresh &&
         this.userInfo &&
         Array.isArray(this.userInfo.roleCodes) &&
         Array.isArray(this.userInfo.menuKeys)
-      if (hasUserInfoReady) return this.userInfo
+
+      if (hasUserInfoReady) {
+        return this.userInfo
+      }
 
       if (!this._userInfoPromise) {
         this._userInfoPromise = getCurrentUser()
           .then((res) => {
-            this.setUserInfo(normalizeUserInfo(res.data, this.userInfo?.username))
-            return this.userInfo
+            const userInfo = normalizeUserInfo(res.data, this.userInfo?.username)
+            this.setUserInfo(userInfo)
+            return userInfo
           })
           .finally(() => {
             this._userInfoPromise = null
           })
       }
+
       return this._userInfoPromise
     },
 
     /**
-     * 作用：
-     * 判断当前用户是否拥有指定角色。
+     * 职责：判断当前用户是否拥有指定角色。
+     * 为什么存在：页面按钮和路由兜底需要轻量角色判断能力。
+     * 关键输入输出：输入为单个角色编码，输出为布尔值。
+     * 关联链路：系统管理、布局显示、权限兜底。
      */
     hasRole(roleCode) {
       const roles = this.userInfo?.roleCodes || []
@@ -230,8 +245,10 @@ export const useSessionStore = defineStore('session', {
     },
 
     /**
-     * 作用：
-     * 判断当前用户是否命中任一角色。
+     * 职责：判断当前用户是否命中任一角色。
+     * 为什么存在：路由 meta.roles 场景通常只关心“是否命中任一角色”。
+     * 关键输入输出：输入为角色编码数组，输出为布尔值。
+     * 关联链路：路由守卫。
      */
     hasAnyRole(roleCodes) {
       const current = this.userInfo?.roleCodes || []
@@ -242,8 +259,10 @@ export const useSessionStore = defineStore('session', {
     },
 
     /**
-     * 作用：
-     * 判断当前用户是否拥有指定菜单权限。
+     * 职责：判断当前用户是否拥有指定菜单权限。
+     * 为什么存在：菜单键是本项目的主权限来源，需要统一封装。
+     * 关键输入输出：输入为单个菜单键，输出为布尔值。
+     * 关联链路：主布局菜单、按钮权限、路由守卫。
      */
     hasMenu(menuKey) {
       const menus = this.userInfo?.menuKeys || []
@@ -251,8 +270,10 @@ export const useSessionStore = defineStore('session', {
     },
 
     /**
-     * 作用：
-     * 判断当前用户是否命中任一菜单权限。
+     * 职责：判断当前用户是否命中任一菜单权限。
+     * 为什么存在：多数菜单和路由只要求命中同组权限中的一个即可。
+     * 关键输入输出：输入为菜单键数组，输出为布尔值。
+     * 关联链路：侧边栏、路由访问控制。
      */
     hasAnyMenu(menuKeys) {
       const menus = this.userInfo?.menuKeys || []
@@ -260,18 +281,17 @@ export const useSessionStore = defineStore('session', {
     },
 
     /**
-     * 作用：
-     * 退出登录并清理本地会话。
-     *
-     * 副作用：
-     * 默认会通知后端清理登录态；即使后端退出失败，也会清掉本地会话。
+     * 职责：退出登录并清理本地会话。
+     * 为什么存在：即使后端退出失败，前端也必须保证本地会话及时清空。
+     * 关键输入输出：输入为是否调用后端退出接口，输出为已清理的会话状态。
+     * 关联链路：右上角退出登录、401 兜底。
      */
     async logout(callServer = true) {
       if (callServer) {
         try {
           await logoutApi()
         } catch (error) {
-          // 后端退出失败时，仍然清理本地会话，避免前端残留脏状态。
+          // 后端退出失败时，仍然清理本地会话，避免残留脏状态。
         }
       }
       this.clearSession()

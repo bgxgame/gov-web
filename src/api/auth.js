@@ -25,4 +25,4 @@ export const logout = () => request.post('/system/logout')
  *
  * @returns {Promise<any>} 当前用户响应
  */
-export const getCurrentUser = () => request.get('/system/me')
+export const getCurrentUser = () => request.get('/system/me', { cancelKey: 'auth:me' })

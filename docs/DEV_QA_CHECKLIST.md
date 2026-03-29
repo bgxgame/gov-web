@@ -2,7 +2,7 @@
 
 ## 开发前（5分钟）
 1. 确认 Node/NPM 版本与依赖安装：`npm ci` 或 `npm install`。
-2. 检查环境变量：参考 `.env.example`，确认 `VITE_API_BASE_URL`、`VITE_API_TIMEOUT`、`VITE_APP_LOG_LEVEL`。
+2. 检查环境变量：参考 `.env.example`，确认 `VITE_API_BASE_URL`、`VITE_API_TIMEOUT`、`VITE_APP_LOG_LEVEL`、慢请求阈值等配置。
 3. 检查编码规范：文件编码 `UTF-8 without BOM`，遵守 `.editorconfig`。
 4. 启动联调环境：`npm run dev`，确认后端可访问。
 
@@ -11,6 +11,7 @@
 2. 权限自测：管理员、部门负责人、普通用户菜单与按钮状态正确。
 3. 文案检查：提示语统一中文且语义清晰。
 4. API 参数检查：通过 helper 组装，不在页面中散落拼对象。
+5. 观测检查：确认关键链路日志能看到 `traceId`，必要时查看 `window.__GOV_APP_LOGS__`。
 
 ## 提测前（必跑）
 1. 单元+组件测试：`npm run test -- --run`
@@ -22,6 +23,10 @@
    - 审批中心待办/已办、通过/驳回
    - 用户管理启停、编辑、角色
    - 地图页加载与筛选
+5. 观测回归：
+   - 浏览器运行时日志缓冲正常
+   - 菜单点击、路由拦截、退出登录等用户动作可在 `window.__GOV_APP_LOGS__` 中看到
+   - 后端 `app.log / audit.log / perf.log / error.log` 可按 `traceId` 串联
 
 ## 发布前（建议）
 1. 确认打包产物体积无异常波动。

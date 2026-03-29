@@ -7,19 +7,19 @@ import { buildFlowApprovalPayload, buildFlowPageParams } from '../utils/flow-mod
  */
 
 /** 按原始参数获取待办列表。 */
-export const getTodoList = (params) => request.get('/flow/todo', { params })
+export const getTodoList = (params, config = {}) => request.get('/flow/todo', { params, cancelKey: 'flow:todo', ...config })
 
 /** 按原始参数获取已办列表。 */
-export const getDoneList = (params) => request.get('/flow/done', { params })
+export const getDoneList = (params, config = {}) => request.get('/flow/done', { params, cancelKey: 'flow:done', ...config })
 
 /** 提交审批动作。 */
 export const approveTask = (payload) => request.post('/flow/approve', payload)
 
 /** 根据分页对象获取待办分页。 */
-export const fetchTodoPage = (pagination) => getTodoList(buildFlowPageParams(pagination))
+export const fetchTodoPage = (pagination, config) => getTodoList(buildFlowPageParams(pagination), config)
 
 /** 根据分页对象获取已办分页。 */
-export const fetchDonePage = (pagination) => getDoneList(buildFlowPageParams(pagination))
+export const fetchDonePage = (pagination, config) => getDoneList(buildFlowPageParams(pagination), config)
 
 /** 根据任务 ID 和审批结果提交审批动作。 */
 export const approveTaskDecision = (taskId, approved) => approveTask(buildFlowApprovalPayload(taskId, approved))

@@ -1,20 +1,26 @@
 <template>
   <div class="app-container">
     <el-card class="filter-card" shadow="never">
-      <el-form :inline="true" :model="queryForm">
+      <el-form :inline="true" :model="queryForm" @submit.prevent="handleQuery">
         <el-form-item label="角色名称">
           <el-input v-model="queryForm.roleName" placeholder="请输入角色名称" clearable />
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="handleQuery">查询</el-button>
-          <el-button @click="handleReset">重置</el-button>
-          <el-button type="success" @click="openCreateDialog">新增角色</el-button>
+          <el-button type="primary" native-type="submit" :loading="loading" @click="handleQuery">查询</el-button>
+          <el-button :disabled="loading" @click="handleReset">重置</el-button>
+          <el-button type="success" :disabled="loading" @click="openCreateDialog">新增角色</el-button>
         </el-form-item>
       </el-form>
     </el-card>
 
     <el-card shadow="never">
-      <el-table :data="tableData" border v-loading="loading">
+      <el-table
+        :data="tableData"
+        border
+        v-loading="loading"
+        element-loading-text="正在加载角色列表..."
+        empty-text="暂无角色数据"
+      >
         <el-table-column prop="roleName" label="角色名称" min-width="160" />
         <el-table-column label="菜单权限" min-width="300">
           <template #default="{ row }">
@@ -48,14 +54,14 @@
     </el-card>
 
     <el-dialog v-model="dialog.visible" :title="dialog.mode === 'create' ? '新增角色' : '编辑角色'" width="520px">
-      <el-form :model="dialog.form" label-width="90px">
+      <el-form :model="dialog.form" label-width="90px" @submit.prevent="handleSave">
         <el-form-item label="角色名称" required>
           <el-input v-model="dialog.form.roleName" />
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialog.visible = false">取消</el-button>
-        <el-button type="primary" :loading="dialog.saving" @click="handleSave">保存</el-button>
+        <el-button type="primary" native-type="submit" :loading="dialog.saving" @click="handleSave">保存</el-button>
       </template>
     </el-dialog>
 
@@ -76,12 +82,14 @@
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
 import { deleteRole, fetchRolePageByForm, getRoleMenuCatalog, saveRoleForm, updateRoleMenuKeys } from '../../api/system'
-import { confirmAction, showSuccess, showWarning } from '../../utils/feedback'
+import { useActivatedRefresh } from '../../utils/activated-refresh'
+import { confirmAction, handleActionError, showSuccess, showWarning } from '../../utils/feedback'
 import { createEmptyRoleForm, normalizeRoleForm, splitMenuPerms } from '../../utils/system-models'
 
 // 角色管理页：负责角色分页、角色维护和菜单权限分配。
 const loading = ref(false)
 const tableData = ref([])
+const tableFetchSeq = ref(0)
 const menuCatalog = ref([])
 const menuLabelMap = ref({})
 
@@ -126,16 +134,29 @@ async function fetchMenuCatalog() {
 }
 
 // 查询角色分页数据。
-async function fetchTableData() {
-  loading.value = true
+async function fetchTableData(options = {}) {
+  const { silent = false } = options
+  const currentFetchSeq = ++tableFetchSeq.value
+  if (!silent) {
+    loading.value = true
+  }
   try {
     const res = await fetchRolePageByForm(queryForm, pagination)
+    if (currentFetchSeq !== tableFetchSeq.value) return
     tableData.value = res.data?.records || []
     pagination.total = Number(res.data?.total || 0)
+    markRefreshed()
   } finally {
-    loading.value = false
+    if (!silent && currentFetchSeq === tableFetchSeq.value) {
+      loading.value = false
+    }
   }
 }
+
+const { markRefreshed } = useActivatedRefresh(() => fetchTableData({ silent: true }), {
+  minIntervalMs: 15000,
+  shouldRefresh: () => !dialog.visible && !menuDialog.visible && !dialog.saving && !menuDialog.saving && !loading.value
+})
 
 // 以当前条件重新查询第一页。
 function handleQuery() {
@@ -182,7 +203,7 @@ async function handleSave() {
     await saveRoleForm(dialog.form)
     showSuccess(dialog.mode === 'create' ? '新增角色成功' : '更新角色成功')
     dialog.visible = false
-    fetchTableData()
+    await fetchTableData()
   } finally {
     dialog.saving = false
   }
@@ -195,7 +216,7 @@ async function handleSaveMenus() {
     await updateRoleMenuKeys(menuDialog.roleId, menuDialog.menuKeys)
     showSuccess('菜单权限更新成功')
     menuDialog.visible = false
-    fetchTableData()
+    await fetchTableData()
   } finally {
     menuDialog.saving = false
   }
@@ -203,10 +224,14 @@ async function handleSaveMenus() {
 
 // 删除角色。
 async function handleDelete(row) {
-  await confirmAction(`确认删除角色《${row.roleName}》吗？`, { title: '删除确认', type: 'warning' })
-  await deleteRole(row.id)
-  showSuccess('删除成功')
-  fetchTableData()
+  try {
+    await confirmAction(`确认删除角色《${row.roleName}》吗？`, { title: '删除确认', type: 'warning' })
+    await deleteRole(row.id)
+    showSuccess('删除成功')
+    await fetchTableData()
+  } catch (error) {
+    handleActionError(error, '删除角色失败，请稍后重试')
+  }
 }
 
 onMounted(async () => {

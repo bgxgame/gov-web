@@ -1,6 +1,6 @@
 <template>
   <div class="dashboard-container">
-    <el-card class="map-card" shadow="never">
+    <el-card v-loading="mapLoading" class="map-card" shadow="never">
       <template #header>
         <div class="map-header">
           <div class="header-left">
@@ -10,50 +10,55 @@
           <div class="header-right">
             <el-tag type="info">当前层级：{{ levelLabel }}</el-tag>
             <el-button v-if="viewLevel !== 'city'" @click="goBack">返回上级</el-button>
-            <el-button @click="reloadMapData">刷新</el-button>
+            <el-button :loading="mapReloading" @click="reloadMapData">刷新</el-button>
           </div>
         </div>
       </template>
-      <div id="project-map" class="chart-div"></div>
+
+      <div class="chart-shell">
+        <div ref="mapContainerRef" class="chart-div"></div>
+        <div v-if="!mapLoading && !hasMapData" class="map-empty-state">
+          <el-empty description="当前权限范围内暂无已通过项目" />
+        </div>
+      </div>
     </el-card>
 
     <el-drawer v-model="detailDrawer.visible" title="项目详情" size="460px">
-      <el-descriptions :column="1" border>
-        <el-descriptions-item label="项目名称">{{ detailDrawer.data.projectName || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="项目编号">{{ detailDrawer.data.projectCode || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="项目地址">{{ detailDrawer.data.address || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="负责人">{{ detailDrawer.data.leaderName || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="联系电话">{{ detailDrawer.data.leaderPhone || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="省市区">
-          {{ [detailDrawer.data.province, detailDrawer.data.city, detailDrawer.data.district].filter(Boolean).join(' / ') || '-' }}
-        </el-descriptions-item>
-      </el-descriptions>
+      <div v-loading="detailDrawer.loading">
+        <el-descriptions :column="1" border>
+          <el-descriptions-item label="项目名称">{{ detailDrawer.data.projectName || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="项目编号">{{ detailDrawer.data.projectCode || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="项目地址">{{ detailDrawer.data.address || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="负责人">{{ detailDrawer.data.leaderName || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="联系电话">{{ detailDrawer.data.leaderPhone || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="省市区">
+            {{ [detailDrawer.data.province, detailDrawer.data.city, detailDrawer.data.district].filter(Boolean).join(' / ') || '-' }}
+          </el-descriptions-item>
+        </el-descriptions>
+      </div>
     </el-drawer>
   </div>
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { Location } from '@element-plus/icons-vue'
-import axios from 'axios'
-import { use, init, registerMap } from 'echarts/core'
-import { GeoComponent, TooltipComponent } from 'echarts/components'
-import { EffectScatterChart } from 'echarts/charts'
-import { CanvasRenderer } from 'echarts/renderers'
 import { fetchProjectMapListByFilters, getProjectDetail } from '../../api/project'
 import { showError } from '../../utils/feedback'
 
-// 地图看板页：负责展示审批通过项目的空间分布，并支持逐层下钻和详情抽屉。
-use([GeoComponent, TooltipComponent, EffectScatterChart, CanvasRenderer])
-
+/**
+ * 职责：展示已审批通过项目的地图分布，并支持城市、区县、项目三级下钻。
+ * 为什么存在：首页需要用低成本的地图视图展示项目整体分布，同时控制图表初始化与重绘开销。
+ * 关键输入输出：输入为地图点位接口、GeoJSON 资源和点击事件；输出为地图渲染结果和项目详情抽屉。
+ * 关联链路：登录后默认首页 -> 地图点位聚合 -> 点击下钻 -> 查看项目详情。
+ */
 const ROOT_ADCODE = '610000'
 const ROOT_MAP_KEY = `map_${ROOT_ADCODE}`
+const MAP_CLICK_EVENT = 'click'
 
-let chart = null
-let resizeTimer = null
-let reloadTimer = null
-const mapCache = new Map()
-
+const mapContainerRef = ref(null)
+const mapLoading = ref(false)
+const mapReloading = ref(false)
 const viewLevel = ref('city')
 const selectedCity = ref('')
 const selectedDistrict = ref('')
@@ -62,43 +67,77 @@ const allApprovedRows = ref([])
 
 const detailDrawer = reactive({
   visible: false,
+  loading: false,
   data: {}
 })
 
-// 根据当前下钻层级生成顶部展示文案。
+let chart = null
+let echartsModulesPromise = null
+let resizeTimer = null
+let reloadTimer = null
+let resizeListenerBound = false
+const mapCache = new Map()
+const echartsRuntime = {
+  init: null,
+  registerMap: null
+}
+
+const hasMapData = computed(() => allApprovedRows.value.length > 0)
 const levelLabel = computed(() => {
   if (viewLevel.value === 'city') return '市级总览'
   if (viewLevel.value === 'district') return `${selectedCity.value || '-'} 区县`
   return `${selectedCity.value || '-'} / ${selectedDistrict.value || '-'} 项目点位`
 })
 
-// 规范化行政区名称，便于和内置中心点映射匹配。
+async function ensureEchartsReady() {
+  if (echartsRuntime.init && echartsRuntime.registerMap) return echartsRuntime
+  if (!echartsModulesPromise) {
+    echartsModulesPromise = Promise.all([
+      import('echarts/core'),
+      import('echarts/components'),
+      import('echarts/charts'),
+      import('echarts/renderers')
+    ]).then(([core, components, charts, renderers]) => {
+      core.use([
+        components.GeoComponent,
+        components.TooltipComponent,
+        charts.EffectScatterChart,
+        renderers.CanvasRenderer
+      ])
+      echartsRuntime.init = core.init
+      echartsRuntime.registerMap = core.registerMap
+      return echartsRuntime
+    })
+  }
+  return echartsModulesPromise
+}
+
 function normalizeRegionName(name) {
   if (!name) return ''
   return String(name).replace(/省|市|区|县|自治州|地区|特别行政区/g, '')
 }
 
-// 懒加载地图 GeoJSON，并做本地缓存。
 async function loadMapGeoJson(adcode) {
   if (mapCache.has(adcode)) return mapCache.get(adcode)
   try {
-    const res = await axios.get(`/map-data/${adcode}.json`)
-    mapCache.set(adcode, res.data)
-    return res.data
+    const response = await fetch(`/map-data/${adcode}.json`)
+    if (!response.ok) return null
+    const geoJson = await response.json()
+    mapCache.set(adcode, geoJson)
+    return geoJson
   } catch (error) {
     return null
   }
 }
 
-// 确保指定地图已注册到 ECharts。
 async function ensureMapRegistered(adcode, mapKey) {
+  const runtime = await ensureEchartsReady()
   const geoJson = await loadMapGeoJson(adcode)
   if (!geoJson) return false
-  registerMap(mapKey, geoJson)
+  runtime.registerMap(mapKey, geoJson)
   return true
 }
 
-// 优先使用项目坐标，缺失时再按城市中心点兜底。
 function resolvePoint(item) {
   const rawLng = Number(item.longitude)
   const rawLat = Number(item.latitude)
@@ -124,21 +163,19 @@ function resolvePoint(item) {
   return [108.95, 34.27]
 }
 
-// 按城市或区县聚合项目数量，用于上层级点位展示。
 function aggregateByRegion(rows, regionKey) {
-  const map = new Map()
+  const regionMap = new Map()
   rows.forEach((item) => {
     const key = item[regionKey]
     if (!key) return
-    if (!map.has(key)) {
-      map.set(key, { name: key, count: 0, sample: item })
+    if (!regionMap.has(key)) {
+      regionMap.set(key, { name: key, count: 0, sample: item })
     }
-    map.get(key).count += 1
+    regionMap.get(key).count += 1
   })
-  return Array.from(map.values())
+  return Array.from(regionMap.values())
 }
 
-// 根据当前下钻层级返回需要渲染的数据集。
 function getRowsByLevel() {
   if (viewLevel.value === 'city') return allApprovedRows.value
   if (viewLevel.value === 'district') {
@@ -149,7 +186,6 @@ function getRowsByLevel() {
   )
 }
 
-// 按当前层级重新渲染地图。
 async function renderMap() {
   if (!chart) return
 
@@ -238,7 +274,6 @@ async function renderMap() {
   })
 }
 
-// 拉取审批通过项目点位数据。
 async function fetchApprovedMapRows() {
   const res = await fetchProjectMapListByFilters({ province: '陕西省' })
   let rows = res.data || []
@@ -249,33 +284,38 @@ async function fetchApprovedMapRows() {
   allApprovedRows.value = rows
 }
 
-// 执行一次完整的数据刷新 + 地图重绘。
 async function performReload() {
   await fetchApprovedMapRows()
   await renderMap()
 }
 
-// 通过节流方式刷新地图数据，避免按钮连续点击造成重复请求。
 function reloadMapData() {
-  if (reloadTimer) return
-  reloadTimer = setTimeout(async () => {
+  if (reloadTimer || mapReloading.value) return
+  reloadTimer = window.setTimeout(async () => {
     reloadTimer = null
-    await performReload()
+    mapReloading.value = true
+    try {
+      await performReload()
+    } finally {
+      mapReloading.value = false
+    }
   }, 180)
 }
 
-// 打开项目详情抽屉。
 async function openProjectDetail(projectId) {
+  detailDrawer.visible = true
+  detailDrawer.loading = true
   try {
     const res = await getProjectDetail(projectId)
     detailDrawer.data = res.data || {}
-    detailDrawer.visible = true
   } catch (error) {
+    detailDrawer.visible = false
     showError('加载项目详情失败')
+  } finally {
+    detailDrawer.loading = false
   }
 }
 
-// 从市级下钻到区县层级。
 async function drillDownByCity(cityName) {
   selectedCity.value = cityName
   selectedDistrict.value = ''
@@ -284,14 +324,12 @@ async function drillDownByCity(cityName) {
   await renderMap()
 }
 
-// 从区县层级下钻到具体项目点位层级。
 async function drillDownByDistrict(districtName) {
   selectedDistrict.value = districtName
   viewLevel.value = 'project'
   await renderMap()
 }
 
-// 从当前层级返回上一级。
 async function goBack() {
   if (viewLevel.value === 'project') {
     viewLevel.value = 'district'
@@ -306,37 +344,19 @@ async function goBack() {
   await renderMap()
 }
 
-// 处理窗口尺寸变化，并节流触发 ECharts 重绘。
 function handleResize() {
   if (resizeTimer) {
     clearTimeout(resizeTimer)
   }
-  resizeTimer = setTimeout(() => {
-    if (chart) chart.resize()
+  resizeTimer = window.setTimeout(() => {
+    chart?.resize()
   }, 120)
 }
 
-onMounted(async () => {
-  await nextTick()
-  await new Promise((resolve) => requestAnimationFrame(resolve))
-
-  const container = document.getElementById('project-map')
-  if (!container) {
-    showError('地图容器初始化失败')
-    return
-  }
-
-  chart = init(container)
-  const rootLoaded = await ensureMapRegistered(ROOT_ADCODE, ROOT_MAP_KEY)
-  if (!rootLoaded) {
-    showError('陕西地图资源加载失败')
-    return
-  }
-  currentMapKey.value = ROOT_MAP_KEY
-
-  await performReload()
-
-  chart.on('click', async (params) => {
+function bindChartEvents() {
+  if (!chart) return
+  chart.off(MAP_CLICK_EVENT)
+  chart.on(MAP_CLICK_EVENT, async (params) => {
     if (params.seriesType !== 'scatter' && params.seriesType !== 'effectScatter') return
     if (viewLevel.value === 'city') {
       await drillDownByCity(params.name)
@@ -348,12 +368,66 @@ onMounted(async () => {
     }
     await openProjectDetail(params.data?.meta?.projectId || params.value?.[2])
   })
+}
 
-  window.addEventListener('resize', handleResize)
+function ensureResizeListener(active) {
+  if (active && !resizeListenerBound) {
+    window.addEventListener('resize', handleResize)
+    resizeListenerBound = true
+    return
+  }
+  if (!active && resizeListenerBound) {
+    window.removeEventListener('resize', handleResize)
+    resizeListenerBound = false
+  }
+}
+
+async function setupChart() {
+  await nextTick()
+  await new Promise((resolve) => requestAnimationFrame(resolve))
+
+  const container = mapContainerRef.value
+  if (!container) {
+    showError('地图容器初始化失败')
+    return
+  }
+
+  const runtime = await ensureEchartsReady()
+  chart = runtime.init(container)
+  const rootLoaded = await ensureMapRegistered(ROOT_ADCODE, ROOT_MAP_KEY)
+  if (!rootLoaded) {
+    showError('陕西地图资源加载失败')
+    return
+  }
+  currentMapKey.value = ROOT_MAP_KEY
+
+  bindChartEvents()
+  await performReload()
+}
+
+onMounted(async () => {
+  mapLoading.value = true
+  try {
+    await setupChart()
+    ensureResizeListener(true)
+  } finally {
+    mapLoading.value = false
+  }
+})
+
+onActivated(() => {
+  ensureResizeListener(true)
+  nextTick(() => {
+    chart?.resize()
+  })
+})
+
+onDeactivated(() => {
+  ensureResizeListener(false)
 })
 
 onUnmounted(() => {
-  window.removeEventListener('resize', handleResize)
+  ensureResizeListener(false)
   if (resizeTimer) {
     clearTimeout(resizeTimer)
   }
@@ -361,6 +435,7 @@ onUnmounted(() => {
     clearTimeout(reloadTimer)
   }
   if (chart) {
+    chart.off(MAP_CLICK_EVENT)
     chart.dispose()
     chart = null
   }
@@ -404,9 +479,24 @@ onUnmounted(() => {
   gap: 8px;
 }
 
+.chart-shell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
 .chart-div {
   width: 100%;
   height: calc(100vh - 65px);
+}
+
+.map-empty-state {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.85);
 }
 
 :deep(.el-card__body) {

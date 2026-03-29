@@ -1,7 +1,7 @@
 <template>
   <div class="app-container">
     <el-card class="filter-card" shadow="never">
-      <el-form :inline="true" :model="queryForm" class="query-form">
+      <el-form :inline="true" :model="queryForm" class="query-form" @submit.prevent="handleQuery">
         <el-form-item label="项目名称">
           <el-input v-model="queryForm.projectName" placeholder="请输入项目名称" clearable />
         </el-form-item>
@@ -14,15 +14,21 @@
           <el-input v-model="queryForm.province" placeholder="如：陕西省" clearable />
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="handleQuery">查询</el-button>
-          <el-button @click="handleReset">重置</el-button>
-          <el-button type="success" @click="openCreateDialog">新增项目</el-button>
+          <el-button type="primary" native-type="submit" :loading="tableLoading" @click="handleQuery">查询</el-button>
+          <el-button :disabled="tableLoading" @click="handleReset">重置</el-button>
+          <el-button type="success" :disabled="tableLoading" @click="openCreateDialog">新增项目</el-button>
         </el-form-item>
       </el-form>
     </el-card>
 
     <el-card shadow="never">
-      <el-table :data="tableData" border v-loading="tableLoading">
+      <el-table
+        :data="tableData"
+        border
+        v-loading="tableLoading"
+        element-loading-text="正在加载项目列表..."
+        empty-text="暂无项目数据"
+      >
         <el-table-column prop="projectName" label="项目名称" min-width="180" />
         <el-table-column prop="projectCode" label="项目编号" min-width="130" />
         <el-table-column prop="address" label="地址" min-width="220" />
@@ -81,7 +87,7 @@
       destroy-on-close
     >
       <div v-loading="editDialog.loading">
-        <el-form :model="editDialog.form" label-width="90px">
+        <el-form :model="editDialog.form" label-width="90px" @submit.prevent="handleSave">
         <el-row :gutter="12">
           <el-col :span="12">
             <el-form-item label="项目名称" required>
@@ -158,7 +164,7 @@
       </div>
       <template #footer>
         <el-button @click="editDialog.visible = false">取消</el-button>
-        <el-button type="primary" :loading="editDialog.saving" @click="handleSave">保存</el-button>
+        <el-button type="primary" native-type="submit" :loading="editDialog.saving" @click="handleSave">保存</el-button>
       </template>
     </el-dialog>
 
@@ -187,7 +193,8 @@ import { onMounted, reactive, ref } from 'vue'
 import { getUserSimple } from '../../api/system'
 import { deleteProject, fetchProjectPageByForm, getProjectDetail, saveProjectForm, submitProjectById } from '../../api/project'
 import { useSessionStore } from '../../stores/session'
-import { confirmAction, showError, showSuccess, showWarning } from '../../utils/feedback'
+import { useActivatedRefresh } from '../../utils/activated-refresh'
+import { confirmAction, handleActionError, showError, showSuccess, showWarning } from '../../utils/feedback'
 import { createEmptyProjectForm, normalizeProjectForm } from '../../utils/project-models'
 
 // 项目管理页：负责项目分页、编辑、详情、删除和提交审批。
@@ -316,12 +323,24 @@ async function fetchTableData(options = {}) {
     if (currentFetchSeq !== tableFetchSeq.value) return
     tableData.value = res.data?.records || []
     pagination.total = Number(res.data?.total || 0)
+    markRefreshed()
   } finally {
     if (!silent && currentFetchSeq === tableFetchSeq.value) {
       tableLoading.value = false
     }
   }
 }
+
+const { markRefreshed } = useActivatedRefresh(() => fetchTableData({ silent: true }), {
+  minIntervalMs: 10000,
+  shouldRefresh: () =>
+    !editDialog.visible &&
+    !detailDialog.visible &&
+    !editDialog.saving &&
+    rowActionLoading.submitId === null &&
+    rowActionLoading.deleteId === null &&
+    !tableLoading.value
+})
 
 // 以当前查询条件重新查询第一页。
 function handleQuery() {
@@ -445,7 +464,7 @@ async function handleSubmit(row) {
     showSuccess('提交审批成功')
     await fetchTableData({ silent: true })
   } catch (error) {
-    // 用户取消时不提示
+    handleActionError(error, '提交审批失败，请稍后重试')
   } finally {
     rowActionLoading.submitId = null
   }
@@ -465,7 +484,7 @@ async function handleDelete(row) {
     showSuccess('删除成功')
     await fetchTableData({ silent: true })
   } catch (error) {
-    // 用户取消时不提示
+    handleActionError(error, '删除项目失败，请稍后重试')
   } finally {
     rowActionLoading.deleteId = null
   }

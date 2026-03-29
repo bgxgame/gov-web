@@ -73,6 +73,24 @@ export function showError(message = '系统繁忙，请稍后重试') {
 }
 
 /**
+ * 作用：判断当前异常是否属于确认框取消/关闭，不应再提示失败消息。
+ */
+export function isCancelError(error) {
+  const text = String(error?.action || error?.message || error || '').trim().toLowerCase()
+  if (!text) return false
+  return text === 'cancel' || text === 'close' || text === '取消' || text === '关闭'
+}
+
+/**
+ * 作用：统一处理页面动作异常；用户取消时静默忽略，其余异常只在未提示过时补兜底提示。
+ */
+export function handleActionError(error, fallback = '操作失败，请稍后重试') {
+  if (isCancelError(error)) return
+  if (error?.__messageHandled) return
+  showError(getErrorMessage(error, fallback))
+}
+
+/**
  * 作用：弹出统一确认框，默认禁用遮罩误触关闭。
  */
 export async function confirmAction(message, options = {}) {
