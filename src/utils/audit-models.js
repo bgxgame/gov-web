@@ -1,10 +1,12 @@
 /**
  * @typedef {Object} AuditPageQueryForm
  * @property {string} [keyword]
+ * @property {string} [deptName]
  * @property {string} [requestMethod]
  * @property {string} [requestUri]
- * @property {number|string|undefined} [httpStatus]
  * @property {string} [clientIp]
+ * @property {number|string|undefined} [durationMin]
+ * @property {number|string|undefined} [durationMax]
  * @property {[Date|string, Date|string]|[]} [timeRange]
  */
 
@@ -30,10 +32,12 @@ export function buildAuditPageParams(queryForm, pagination) {
     pageNum: Number(pagination?.pageNum || 1),
     pageSize: Number(pagination?.pageSize || 20),
     keyword: normalizeOptionalText(queryForm?.keyword),
+    deptName: normalizeOptionalText(queryForm?.deptName),
     requestMethod: normalizeOptionalText(queryForm?.requestMethod),
     requestUri: normalizeOptionalText(queryForm?.requestUri),
-    httpStatus: normalizeStatus(queryForm?.httpStatus),
     clientIp: normalizeOptionalText(queryForm?.clientIp),
+    durationMin: normalizeOptionalNumber(queryForm?.durationMin),
+    durationMax: normalizeOptionalNumber(queryForm?.durationMax),
     startTime,
     endTime
   }
@@ -44,10 +48,10 @@ function normalizeOptionalText(value) {
   return text ? text : undefined
 }
 
-function normalizeStatus(value) {
+function normalizeOptionalNumber(value) {
   if (value === undefined || value === null || value === '') return undefined
-  const status = Number(value)
-  return Number.isFinite(status) ? status : undefined
+  const numberValue = Number(value)
+  return Number.isFinite(numberValue) ? numberValue : undefined
 }
 
 function normalizeTimeRange(timeRange) {

@@ -15,10 +15,12 @@ describe('audit-models', () => {
     const params = buildAuditPageParams(
       {
         keyword: ' admin ',
+        deptName: ' 信息中心 ',
         requestMethod: ' POST ',
         requestUri: ' /api/flow/approve ',
-        httpStatus: '200',
         clientIp: ' 10.0.0.1 ',
+        durationMin: '10',
+        durationMax: '500',
         timeRange: [new Date('2026-03-29T10:07:14'), new Date('2026-03-29T10:08:00')]
       },
       { pageNum: 2, pageSize: 50 }
@@ -27,10 +29,12 @@ describe('audit-models', () => {
     expect(params.pageNum).toBe(2)
     expect(params.pageSize).toBe(50)
     expect(params.keyword).toBe('admin')
+    expect(params.deptName).toBe('信息中心')
     expect(params.requestMethod).toBe('POST')
     expect(params.requestUri).toBe('/api/flow/approve')
-    expect(params.httpStatus).toBe(200)
     expect(params.clientIp).toBe('10.0.0.1')
+    expect(params.durationMin).toBe(10)
+    expect(params.durationMax).toBe(500)
     expect(typeof params.startTime).toBe('string')
     expect(typeof params.endTime).toBe('string')
   })
@@ -42,20 +46,24 @@ describe('audit-models', () => {
     const params = buildAuditPageParams(
       {
         keyword: ' ',
+        deptName: '',
         requestMethod: '',
         requestUri: '',
-        httpStatus: '',
         clientIp: '',
+        durationMin: '',
+        durationMax: '',
         timeRange: []
       },
       { pageNum: 1, pageSize: 20 }
     )
 
     expect(params.keyword).toBeUndefined()
+    expect(params.deptName).toBeUndefined()
     expect(params.requestMethod).toBeUndefined()
     expect(params.requestUri).toBeUndefined()
-    expect(params.httpStatus).toBeUndefined()
     expect(params.clientIp).toBeUndefined()
+    expect(params.durationMin).toBeUndefined()
+    expect(params.durationMax).toBeUndefined()
     expect(params.startTime).toBeUndefined()
     expect(params.endTime).toBeUndefined()
   })

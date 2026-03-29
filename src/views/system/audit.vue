@@ -2,26 +2,7 @@
   <div class="app-container">
     <el-card class="filter-card" shadow="never">
       <el-form :inline="true" :model="queryForm" class="query-form">
-        <el-form-item label="用户关键字">
-          <el-input v-model="queryForm.keyword" placeholder="用户名/姓名" clearable />
-        </el-form-item>
-        <el-form-item label="请求方法">
-          <el-select v-model="queryForm.requestMethod" placeholder="全部" clearable style="width: 120px">
-            <el-option v-for="item in requestMethodOptions" :key="item" :label="item" :value="item" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="请求路径">
-          <el-input v-model="queryForm.requestUri" placeholder="如 /api/project/page" clearable />
-        </el-form-item>
-        <el-form-item label="状态码">
-          <el-select v-model="queryForm.httpStatus" placeholder="全部" clearable style="width: 120px">
-            <el-option v-for="item in statusOptions" :key="item.value" :label="item.label" :value="item.value" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="客户端IP">
-          <el-input v-model="queryForm.clientIp" placeholder="如 192.168.1.10" clearable />
-        </el-form-item>
-        <el-form-item label="时间范围">
+        <el-form-item label="请求时间">
           <el-date-picker
             v-model="queryForm.timeRange"
             type="datetimerange"
@@ -30,6 +11,28 @@
             end-placeholder="结束时间"
             style="width: 360px"
           />
+        </el-form-item>
+        <el-form-item label="操作用户">
+          <el-input v-model="queryForm.keyword" placeholder="用户姓名 / 用户名" clearable />
+        </el-form-item>
+        <el-form-item label="用户部门">
+          <el-input v-model="queryForm.deptName" placeholder="部门名称" clearable />
+        </el-form-item>
+        <el-form-item label="真实IP">
+          <el-input v-model="queryForm.clientIp" placeholder="如 192.168.1.10" clearable />
+        </el-form-item>
+        <el-form-item label="请求路径">
+          <el-input v-model="queryForm.requestUri" placeholder="如 /api/project/page" clearable />
+        </el-form-item>
+        <el-form-item label="请求方法">
+          <el-select v-model="queryForm.requestMethod" placeholder="全部" clearable style="width: 120px">
+            <el-option v-for="item in requestMethodOptions" :key="item" :label="item" :value="item" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="耗时(ms)" class="duration-form-item">
+          <el-input v-model="queryForm.durationMin" placeholder="最小" clearable style="width: 100px" />
+          <span class="duration-split">-</span>
+          <el-input v-model="queryForm.durationMax" placeholder="最大" clearable style="width: 100px" />
         </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="handleQuery">查询</el-button>
@@ -41,27 +44,25 @@
     <el-card class="table-card" shadow="never">
       <div class="table-wrap">
         <el-table :data="tableData" border v-loading="loading" height="100%">
-        <el-table-column prop="requestTime" label="请求时间" min-width="170" />
-        <el-table-column label="操作用户" min-width="170">
-          <template #default="{ row }">
-            <span>{{ formatOperator(row) }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="请求方法" min-width="110">
-          <template #default="{ row }">
-            <el-tag size="small" :type="requestMethodTagType(row.requestMethod)">{{ row.requestMethod || '-' }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="requestUri" label="请求路径" min-width="260" show-overflow-tooltip />
-        <el-table-column label="状态码" min-width="100">
-          <template #default="{ row }">
-            <el-tag size="small" :type="statusTagType(row.httpStatus)">{{ row.httpStatus ?? '-' }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="clientIp" label="客户端IP" min-width="150" />
-        <el-table-column prop="durationMs" label="耗时(ms)" min-width="100" />
-        <el-table-column prop="traceId" label="链路ID" min-width="220" show-overflow-tooltip />
-        <el-table-column prop="userAgent" label="客户端标识" min-width="260" show-overflow-tooltip />
+          <el-table-column prop="requestTime" label="请求时间" min-width="170" />
+          <el-table-column label="操作用户" min-width="160">
+            <template #default="{ row }">
+              <span>{{ formatOperator(row) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="deptName" label="用户部门" min-width="160" show-overflow-tooltip />
+          <el-table-column label="真实IP" min-width="150">
+            <template #default="{ row }">
+              <span>{{ formatRealIp(row.clientIp) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="requestUri" label="请求路径" min-width="260" show-overflow-tooltip />
+          <el-table-column label="请求方法" min-width="110">
+            <template #default="{ row }">
+              <el-tag size="small" :type="requestMethodTagType(row.requestMethod)">{{ row.requestMethod || '-' }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="durationMs" label="耗时(ms)" min-width="100" />
         </el-table>
       </div>
 
@@ -85,23 +86,19 @@ import { onMounted, reactive, ref } from 'vue'
 import { fetchAuditPageByForm } from '../../api/system'
 import { showWarning } from '../../utils/feedback'
 
-// 审计日志管理页：仅面向管理员展示系统接口访问轨迹，支持筛选和分页查看。
+// 审计日志管理页：筛选项与表格字段按契约一一对应，减少认知负担。
 const requestMethodOptions = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH']
-const statusOptions = [
-  { label: '200 成功', value: 200 },
-  { label: '401 未登录', value: 401 },
-  { label: '403 无权限', value: 403 },
-  { label: '500 服务异常', value: 500 }
-]
 
 const loading = ref(false)
 const tableData = ref([])
 const queryForm = reactive({
   keyword: '',
+  deptName: '',
   requestMethod: '',
   requestUri: '',
-  httpStatus: undefined,
   clientIp: '',
+  durationMin: '',
+  durationMax: '',
   timeRange: []
 })
 const pagination = reactive({
@@ -131,22 +128,31 @@ function handleQuery() {
 // 清空筛选条件并重新查询。
 function handleReset() {
   queryForm.keyword = ''
+  queryForm.deptName = ''
   queryForm.requestMethod = ''
   queryForm.requestUri = ''
-  queryForm.httpStatus = undefined
   queryForm.clientIp = ''
+  queryForm.durationMin = ''
+  queryForm.durationMax = ''
   queryForm.timeRange = []
   pagination.pageNum = 1
   fetchTableData()
 }
 
-// 格式化审计操作用户显示。
+// 格式化操作用户显示。
 function formatOperator(row) {
   const name = row.realName || row.username
-  if (name && row.userId) return `${name}(${row.userId})`
   if (name) return name
   if (row.userId) return `用户ID:${row.userId}`
   return '匿名请求'
+}
+
+// 统一展示真实 IP（回环地址归一化）。
+function formatRealIp(ip) {
+  const text = String(ip || '').trim()
+  if (!text) return '-'
+  if (text === '::1' || text === '0:0:0:0:0:0:0:1') return '127.0.0.1'
+  return text
 }
 
 // 请求方法颜色映射。
@@ -157,15 +163,6 @@ function requestMethodTagType(method) {
   if (text === 'PUT') return 'warning'
   if (text === 'DELETE') return 'danger'
   return ''
-}
-
-// HTTP 状态码颜色映射。
-function statusTagType(status) {
-  const code = Number(status)
-  if (code >= 200 && code < 300) return 'success'
-  if (code >= 400 && code < 500) return 'warning'
-  if (code >= 500) return 'danger'
-  return 'info'
 }
 
 onMounted(async () => {
@@ -193,6 +190,16 @@ onMounted(async () => {
 
 .query-form {
   margin-bottom: -18px;
+}
+
+.duration-form-item :deep(.el-form-item__content) {
+  display: flex;
+  align-items: center;
+}
+
+.duration-split {
+  margin: 0 8px;
+  color: #909399;
 }
 
 .table-card {
