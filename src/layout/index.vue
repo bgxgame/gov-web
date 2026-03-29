@@ -107,6 +107,7 @@ import { Expand, Fold, HomeFilled, Management, Setting, SwitchButton } from '@el
 import { useSessionStore } from '../stores/session'
 import { showSuccess } from '../utils/feedback'
 import { logUserAction, logger } from '../utils/logger'
+import { resolveMenuTargetPath } from '../utils/menu-navigation'
 import { CACHEABLE_VIEW_NAMES, shouldKeepAliveRoute } from '../utils/router-cache'
 
 /**
@@ -137,11 +138,20 @@ function canVisitMenu(menuKey) {
  * 作用：统一处理菜单跳转，跳过重复导航，避免快速点击时产生无意义的路由切换。
  */
 async function handleMenuSelect(index) {
-  if (!index || route.path === index || navigatingPath.value === index) {
+  const targetPath = resolveMenuTargetPath(index)
+  const isRoutePath = Boolean(targetPath)
+
+  if (!targetPath || !isRoutePath || route.path === targetPath || navigatingPath.value === targetPath) {
     logUserAction('menu_skip', {
       currentPath: route.path,
-      targetPath: index,
-      reason: !index ? 'empty_target' : route.path === index ? 'same_route' : 'navigation_pending'
+      targetPath,
+      reason: !targetPath
+        ? 'empty_target'
+        : !isRoutePath
+          ? 'non_route_index'
+          : route.path === targetPath
+            ? 'same_route'
+            : 'navigation_pending'
     }, 'debug')
     return
   }
@@ -149,23 +159,23 @@ async function handleMenuSelect(index) {
   const fromPath = route.path
   logUserAction('menu_select', {
     fromPath,
-    targetPath: index
+    targetPath
   })
-  navigatingPath.value = index
+  navigatingPath.value = targetPath
   try {
-    await router.push(index)
+    await router.push(targetPath)
     logUserAction('menu_select_success', {
       fromPath,
-      targetPath: index
+      targetPath
     }, 'debug')
   } catch (error) {
     logger.warn('菜单跳转失败', {
       fromPath,
-      targetPath: index,
+      targetPath,
       message: error?.message
     })
   } finally {
-    if (navigatingPath.value === index) {
+    if (navigatingPath.value === targetPath) {
       navigatingPath.value = ''
     }
   }
