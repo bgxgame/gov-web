@@ -38,8 +38,24 @@
           <template #default="{ row }">
             <el-button link type="primary" @click="handleDetail(row)">详情</el-button>
             <el-button link type="primary" :disabled="!canEdit(row)" @click="openEditDialog(row)">编辑</el-button>
-            <el-button link type="success" :disabled="!canSubmit(row)" @click="handleSubmit(row)">提交审批</el-button>
-            <el-button link type="danger" :disabled="!canDelete(row)" @click="handleDelete(row)">删除</el-button>
+            <el-button
+              link
+              type="success"
+              :loading="rowActionLoading.submitId === row.id"
+              :disabled="!canSubmit(row) || rowActionLoading.submitId === row.id"
+              @click="handleSubmit(row)"
+            >
+              提交审批
+            </el-button>
+            <el-button
+              link
+              type="danger"
+              :loading="rowActionLoading.deleteId === row.id"
+              :disabled="!canDelete(row) || rowActionLoading.deleteId === row.id"
+              @click="handleDelete(row)"
+            >
+              删除
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -196,6 +212,7 @@ const pagination = reactive({
 
 const tableLoading = ref(false)
 const tableData = ref([])
+const tableFetchSeq = ref(0)
 const userOptions = ref([])
 const userOptionsLoaded = ref(false)
 const sessionStore = useSessionStore()
@@ -216,6 +233,12 @@ const detailDialog = reactive({
   loading: false
 })
 const detailData = ref(createEmptyForm())
+const rowActionLoading = reactive({
+  submitId: null,
+  deleteId: null
+})
+
+const MAINLAND_MOBILE_REGEX = /^1\d{10}$/
 
 // 创建页面本地使用的默认项目表单。
 function createEmptyForm() {
@@ -263,6 +286,8 @@ function canEdit(row) {
 
 // 删除项目的前提条件与编辑条件保持一致。
 function canDelete(row) {
+  const status = row.status === null || row.status === undefined ? null : Number(row.status)
+  if (status === 2 && isAdmin) return true
   return canEdit(row)
 }
 
@@ -280,14 +305,21 @@ async function ensureUserOptionsLoaded() {
 }
 
 // 查询项目分页数据。
-async function fetchTableData() {
-  tableLoading.value = true
+async function fetchTableData(options = {}) {
+  const { silent = false } = options
+  const currentFetchSeq = ++tableFetchSeq.value
+  if (!silent) {
+    tableLoading.value = true
+  }
   try {
     const res = await fetchProjectPageByForm(queryForm, pagination)
+    if (currentFetchSeq !== tableFetchSeq.value) return
     tableData.value = res.data?.records || []
     pagination.total = Number(res.data?.total || 0)
   } finally {
-    tableLoading.value = false
+    if (!silent && currentFetchSeq === tableFetchSeq.value) {
+      tableLoading.value = false
+    }
   }
 }
 
@@ -364,13 +396,18 @@ async function handleSave() {
     showWarning('项目名称不能为空')
     return
   }
+  const leaderPhone = String(editDialog.form.leaderPhone || '').trim()
+  if (leaderPhone && !MAINLAND_MOBILE_REGEX.test(leaderPhone)) {
+    showWarning('联系电话格式不正确，请填写11位手机号')
+    return
+  }
 
   editDialog.saving = true
   try {
     await saveProjectForm(editDialog.form)
     showSuccess(editDialog.mode === 'create' ? '项目新增成功' : '项目更新成功')
     editDialog.visible = false
-    fetchTableData()
+    await fetchTableData({ silent: true })
   } finally {
     editDialog.saving = false
   }
@@ -400,13 +437,17 @@ async function handleDetail(row) {
 
 // 把项目提交到审批流。
 async function handleSubmit(row) {
+  if (!row?.id || rowActionLoading.submitId === row.id) return
+  rowActionLoading.submitId = row.id
   try {
     await confirmAction(`确认提交项目《${row.projectName}》进入审批流吗？`, { title: '提交确认', type: 'warning' })
     await submitProjectById(row.id)
     showSuccess('提交审批成功')
-    fetchTableData()
+    await fetchTableData({ silent: true })
   } catch (error) {
     // 用户取消时不提示
+  } finally {
+    rowActionLoading.submitId = null
   }
 }
 
@@ -416,13 +457,17 @@ async function handleDelete(row) {
     showWarning('项目ID不存在，无法删除')
     return
   }
+  if (rowActionLoading.deleteId === row.id) return
+  rowActionLoading.deleteId = row.id
   try {
     await confirmAction(`确认删除项目《${row.projectName}》吗？`, { title: '删除确认', type: 'warning' })
     await deleteProject(String(row.id))
     showSuccess('删除成功')
-    fetchTableData()
+    await fetchTableData({ silent: true })
   } catch (error) {
     // 用户取消时不提示
+  } finally {
+    rowActionLoading.deleteId = null
   }
 }
 

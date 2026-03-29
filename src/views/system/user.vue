@@ -37,7 +37,8 @@
               inline-prompt
               active-text="启用"
               inactive-text="停用"
-              :disabled="!canEditUser(row)"
+              :loading="statusLoadingUserId === row.id"
+              :disabled="!canEditUser(row) || statusLoadingUserId === row.id"
             />
           </template>
         </el-table-column>
@@ -128,6 +129,8 @@ import { createEmptyUserForm, flattenDeptOptions, normalizeUserForm } from '../.
 // 用户管理页：负责用户分页、编辑、状态切换和角色配置。
 const loading = ref(false)
 const tableData = ref([])
+const tableFetchSeq = ref(0)
+const statusLoadingUserId = ref(null)
 const deptOptions = ref([])
 const roleOptions = ref([])
 const deptOptionsLoaded = ref(false)
@@ -198,14 +201,21 @@ async function ensureDialogOptionsLoaded() {
 }
 
 // 查询用户分页数据。
-async function fetchTableData() {
-  loading.value = true
+async function fetchTableData(options = {}) {
+  const { silent = false } = options
+  const currentFetchSeq = ++tableFetchSeq.value
+  if (!silent) {
+    loading.value = true
+  }
   try {
     const res = await fetchUserPageByForm(queryForm, pagination)
+    if (currentFetchSeq !== tableFetchSeq.value) return
     tableData.value = res.data?.records || []
     pagination.total = Number(res.data?.total || 0)
   } finally {
-    loading.value = false
+    if (!silent && currentFetchSeq === tableFetchSeq.value) {
+      loading.value = false
+    }
   }
 }
 
@@ -256,7 +266,7 @@ async function handleSave() {
     await saveUserForm(dialog.form, isDeptScopedManager ? currentDeptId : undefined)
     showSuccess(dialog.mode === 'create' ? '新增用户成功' : '更新用户成功')
     dialog.visible = false
-    fetchTableData()
+    await fetchTableData({ silent: true })
   } finally {
     dialog.saving = false
   }
@@ -264,9 +274,15 @@ async function handleSave() {
 
 // 切换用户启停状态。
 async function handleStatusChange(row, enabled) {
-  await setUserEnabled(row.id, enabled)
-  showSuccess('状态更新成功')
-  fetchTableData()
+  if (!row?.id || statusLoadingUserId.value === row.id) return
+  statusLoadingUserId.value = row.id
+  try {
+    await setUserEnabled(row.id, enabled)
+    showSuccess('状态更新成功')
+    await fetchTableData({ silent: true })
+  } finally {
+    statusLoadingUserId.value = null
+  }
 }
 
 onMounted(async () => {

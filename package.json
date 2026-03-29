@@ -6,10 +6,13 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:log": "powershell -ExecutionPolicy Bypass -File ./scripts/build-log.ps1",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "dev:log": "powershell -ExecutionPolicy Bypass -File ./scripts/dev-log.ps1",
+    "logs:clean": "powershell -ExecutionPolicy Bypass -File ./scripts/clean-logs.ps1 -KeepDays 7"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.2",

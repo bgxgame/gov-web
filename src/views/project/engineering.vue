@@ -17,8 +17,24 @@
             <el-table-column prop="createTime" label="到达时间" min-width="180" />
             <el-table-column label="操作" width="200" fixed="right">
               <template #default="{ row }">
-                <el-button link type="success" @click="handleApprove(row, true)">同意</el-button>
-                <el-button link type="danger" @click="handleApprove(row, false)">驳回</el-button>
+                <el-button
+                  link
+                  type="success"
+                  :loading="approveLoadingTaskId === row.taskId"
+                  :disabled="approveLoadingTaskId === row.taskId"
+                  @click="handleApprove(row, true)"
+                >
+                  同意
+                </el-button>
+                <el-button
+                  link
+                  type="danger"
+                  :loading="approveLoadingTaskId === row.taskId"
+                  :disabled="approveLoadingTaskId === row.taskId"
+                  @click="handleApprove(row, false)"
+                >
+                  驳回
+                </el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -83,6 +99,11 @@ const staleTabs = reactive({
   todo: false,
   done: false
 })
+const tabFetchSeq = reactive({
+  todo: 0,
+  done: 0
+})
+const approveLoadingTaskId = ref(null)
 const pagination = reactive({
   todo: {
     pageNum: 1,
@@ -98,29 +119,37 @@ const pagination = reactive({
 
 // 拉取待办分页，并更新待办 tab 的加载状态与脏标记。
 async function fetchTodo() {
+  const currentSeq = ++tabFetchSeq.todo
   loading.todo = true
   try {
     const res = await fetchTodoPage(pagination.todo)
+    if (currentSeq !== tabFetchSeq.todo) return
     todoList.value = res.data?.records || []
     pagination.todo.total = Number(res.data?.total || 0)
     loadedTabs.todo = true
     staleTabs.todo = false
   } finally {
-    loading.todo = false
+    if (currentSeq === tabFetchSeq.todo) {
+      loading.todo = false
+    }
   }
 }
 
 // 拉取已办分页，并更新已办 tab 的加载状态与脏标记。
 async function fetchDone() {
+  const currentSeq = ++tabFetchSeq.done
   loading.done = true
   try {
     const res = await fetchDonePage(pagination.done)
+    if (currentSeq !== tabFetchSeq.done) return
     doneList.value = res.data?.records || []
     pagination.done.total = Number(res.data?.total || 0)
     loadedTabs.done = true
     staleTabs.done = false
   } finally {
-    loading.done = false
+    if (currentSeq === tabFetchSeq.done) {
+      loading.done = false
+    }
   }
 }
 
@@ -149,16 +178,24 @@ async function handleTabChange(name) {
 
 // 提交同意或驳回操作，并刷新相关 tab 数据。
 async function handleApprove(row, approved) {
-  await confirmAction(
-    approved ? `确认同意任务《${row.taskName}》吗？` : `确认驳回任务《${row.taskName}》吗？`,
-    { title: '审批确认', type: approved ? 'success' : 'warning' }
-  )
-  await approveTaskDecision(row.taskId, approved)
-  showSuccess('审批操作成功')
+  if (!row?.taskId || approveLoadingTaskId.value === row.taskId) return
+  approveLoadingTaskId.value = row.taskId
+  try {
+    await confirmAction(
+      approved ? `确认同意任务《${row.taskName}》吗？` : `确认驳回任务《${row.taskName}》吗？`,
+      { title: '审批确认', type: approved ? 'success' : 'warning' }
+    )
+    await approveTaskDecision(row.taskId, approved)
+    showSuccess('审批操作成功')
 
-  staleTabs.todo = true
-  staleTabs.done = true
-  await refreshCurrentTab()
+    staleTabs.todo = true
+    staleTabs.done = true
+    await refreshCurrentTab()
+  } catch (error) {
+    // 用户取消时不提示
+  } finally {
+    approveLoadingTaskId.value = null
+  }
 }
 
 onMounted(async () => {

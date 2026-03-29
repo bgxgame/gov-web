@@ -1,5 +1,7 @@
 import axios from 'axios'
+import { appConfig } from '../config/app-config'
 import { getErrorMessage, showError } from './feedback'
+import { logger } from './logger'
 
 /**
  * 职责：
@@ -17,8 +19,8 @@ import { getErrorMessage, showError } from './feedback'
  * api -> request -> 后端接口 -> 中文错误提示 / 登录失效跳转。
  */
 const service = axios.create({
-  baseURL: '/api',
-  timeout: 10000
+  baseURL: appConfig.apiBaseUrl,
+  timeout: appConfig.requestTimeout
 })
 
 let redirectedBy401 = false
@@ -29,6 +31,9 @@ let redirectedBy401 = false
  */
 service.interceptors.request.use(
   (config) => {
+    config.metadata = {
+      startAt: Date.now()
+    }
     const token = localStorage.getItem('token')
     if (token) {
       config.headers.Authorization = token
@@ -48,7 +53,10 @@ service.interceptors.request.use(
 service.interceptors.response.use(
   (response) => {
     const res = response.data
+    const requestUrl = response.config?.url
+    const durationMs = Date.now() - Number(response.config?.metadata?.startAt || Date.now())
     if (res.code !== 200) {
+      logger.warn('接口业务失败', { url: requestUrl, code: res.code, msg: res.msg, durationMs })
       if (res.code === 401) {
         localStorage.removeItem('token')
         localStorage.removeItem('user_info')
@@ -72,9 +80,18 @@ service.interceptors.response.use(
       apiError.__messageHandled = true
       return Promise.reject(apiError)
     }
+    logger.debug('接口请求成功', { url: requestUrl, durationMs })
     return res
   },
   (error) => {
+    const requestUrl = error?.config?.url
+    const durationMs = Date.now() - Number(error?.config?.metadata?.startAt || Date.now())
+    logger.error('接口请求异常', {
+      url: requestUrl,
+      message: error?.message,
+      durationMs,
+      status: error?.response?.status
+    })
     if (!error?.__messageHandled) {
       showError(getErrorMessage(error, '网络请求失败'))
       error.__messageHandled = true
