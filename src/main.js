@@ -2,6 +2,7 @@ import { createApp } from 'vue'
 import App from './App.vue'
 import router from './router'
 import { createPinia } from 'pinia'
+import 'element-plus/dist/index.css'
 import './assets/style/index.css'
 
 // 创建 Vue 根应用实例，作为整个前端项目的运行入口。

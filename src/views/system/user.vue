@@ -83,7 +83,7 @@
           </el-select>
         </el-form-item>
         <el-form-item label="手机号">
-          <el-input v-model="dialog.form.phone" />
+          <el-input v-model="dialog.form.phone" maxlength="20" show-word-limit />
         </el-form-item>
         <el-form-item label="状态">
           <el-radio-group v-model="dialog.form.status">
@@ -141,6 +141,7 @@ const isAdmin = sessionStore.hasRole('admin')
 const canManageUsers = sessionStore.hasMenu('system:user')
 const isDeptScopedManager = !isAdmin && canManageUsers
 const currentDeptId = sessionStore.userInfo?.deptId || undefined
+const PHONE_REGEX = /^[0-9-]{7,20}$/
 
 const queryForm = reactive({
   username: '',
@@ -260,6 +261,13 @@ async function handleSave() {
     showWarning('用户名不能为空')
     return
   }
+
+  const normalizedPhone = String(dialog.form.phone || '').trim()
+  if (normalizedPhone && !PHONE_REGEX.test(normalizedPhone)) {
+    showWarning('手机号格式不正确，请输入7-20位数字，可包含 "-"')
+    return
+  }
+  dialog.form.phone = normalizedPhone || ''
 
   dialog.saving = true
   try {
