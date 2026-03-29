@@ -238,7 +238,7 @@ const rowActionLoading = reactive({
   deleteId: null
 })
 
-const MAINLAND_MOBILE_REGEX = /^1\d{10}$/
+const CONTACT_PHONE_REGEX = /^[0-9-]{7,20}$/
 
 // 创建页面本地使用的默认项目表单。
 function createEmptyForm() {
@@ -397,8 +397,8 @@ async function handleSave() {
     return
   }
   const leaderPhone = String(editDialog.form.leaderPhone || '').trim()
-  if (leaderPhone && !MAINLAND_MOBILE_REGEX.test(leaderPhone)) {
-    showWarning('联系电话格式不正确，请填写11位手机号')
+  if (leaderPhone && !CONTACT_PHONE_REGEX.test(leaderPhone)) {
+    showWarning('联系电话格式不正确，请填写7到20位数字，可包含短横线')
     return
   }
 

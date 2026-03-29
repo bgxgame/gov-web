@@ -23,7 +23,8 @@ const MENU_ROUTE_PRIORITY = [
   { menu: 'project:engineering', path: '/project/engineering' },
   { menu: 'system:user', path: '/system/user' },
   { menu: 'system:dept', path: '/system/dept' },
-  { menu: 'system:role', path: '/system/role' }
+  { menu: 'system:role', path: '/system/role' },
+  { menu: 'system:audit', path: '/system/audit' }
 ]
 
 /**
@@ -170,6 +171,12 @@ export const useSessionStore = defineStore('session', {
       const res = await loginApi(payload)
       this.setToken(res.data.tokenValue)
       this.setUserInfo(normalizeUserInfo(res.data, payload.username))
+      // 登录响应通常已包含权限信息；这里再补一次 /system/me，确保首登后的菜单权限状态与后端完全一致。
+      try {
+        await this.refreshUserInfo()
+      } catch (error) {
+        // 补拉失败时保留登录响应里的用户上下文，避免影响主登录流程。
+      }
       return res
     },
 

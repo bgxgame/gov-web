@@ -31,3 +31,20 @@ html, body, #app {
 .fade-leave-to {
   opacity: 0;
 }
+
+/* 统一消息/弹窗层级，避免在复杂页面中被遮挡或显示异常 */
+.el-message,
+.el-notification,
+.el-message-box__wrapper {
+    z-index: 3200 !important;
+}
+
+.el-overlay.is-message-box {
+    z-index: 3200 !important;
+}
+
+.el-message,
+.el-notification {
+    max-width: min(460px, calc(100vw - 24px));
+    word-break: break-word;
+}

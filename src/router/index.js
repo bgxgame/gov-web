@@ -1,8 +1,11 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useSessionStore } from '../stores/session'
+import { showError } from '../utils/feedback'
+import { logger } from '../utils/logger'
+import { finishRouteProgress, startRouteProgress } from '../utils/route-progress'
+import AuditManageView from '../views/system/audit.vue'
 
-// 静态路由表。
-// 当前系统菜单数量有限，因此采用静态路由配合 meta 菜单权限判断即可满足需求。
+// 静态路由表：当前菜单规模可控，配合 meta.menus 即可满足权限需求。
 const routes = [
   {
     path: '/login',
@@ -75,22 +78,37 @@ const routes = [
           roles: ['admin'],
           menus: ['system:role']
         }
+      },
+      {
+        path: 'system/audit',
+        name: 'AuditManage',
+        component: AuditManageView,
+        meta: {
+          title: '审计日志',
+          icon: 'DataAnalysis',
+          roles: ['admin'],
+          menus: ['system:audit']
+        }
       }
     ]
   }
 ]
 
-// 创建路由实例，使用 History 模式。
 const router = createRouter({
   history: createWebHistory(),
   routes
 })
 
+let currentRouteProgressToken = 0
+
 /**
- * 全局前置守卫。
- * 负责登录校验、用户信息补拉、菜单权限判断和无权限回退。
+ * 全局前置守卫：
+ * 1. 登录校验
+ * 2. 用户信息补拉
+ * 3. 菜单权限与角色权限判断
  */
 router.beforeEach(async (to, from, next) => {
+  currentRouteProgressToken = startRouteProgress()
   const sessionStore = useSessionStore()
   const isPublic = Boolean(to.meta?.isPublic)
 
@@ -128,10 +146,25 @@ router.beforeEach(async (to, from, next) => {
 
   const requiredMenus = to.meta?.menus || []
   if (requiredMenus.length > 0 && !sessionStore.hasAnyMenu(requiredMenus)) {
+    // 对首登/权限刚变化的场景做一次自愈刷新，避免误判后直接被重定向回首页。
+    try {
+      await sessionStore.refreshUserInfo()
+    } catch (error) {
+      // ignore
+    }
+    if (sessionStore.hasAnyMenu(requiredMenus)) {
+      next()
+      return
+    }
+
     const homePath = sessionStore.homePath
     if (!homePath) {
       await sessionStore.logout(false)
       next('/login')
+      return
+    }
+    if (from.path && from.path !== '/login' && from.path !== to.path) {
+      next(false)
       return
     }
     if (homePath === to.path) {
@@ -160,6 +193,16 @@ router.beforeEach(async (to, from, next) => {
   }
 
   next()
+})
+
+router.afterEach(() => {
+  finishRouteProgress(currentRouteProgressToken)
+})
+
+router.onError((error) => {
+  finishRouteProgress(currentRouteProgressToken, { hasError: true })
+  logger.error('路由加载失败', { message: error?.message })
+  showError('页面加载失败，请稍后重试')
 })
 
 export default router

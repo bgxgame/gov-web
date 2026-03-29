@@ -42,6 +42,12 @@
             <el-menu-item v-if="canVisitMenu('system:user')" index="/system/user">用户管理</el-menu-item>
             <el-menu-item v-if="canVisitMenu('system:dept')" index="/system/dept">部门管理</el-menu-item>
             <el-menu-item v-if="canVisitMenu('system:role')" index="/system/role">角色管理</el-menu-item>
+            <el-menu-item
+              v-if="canVisitMenu('system:audit')"
+              index="/system/audit"
+            >
+              审计日志
+            </el-menu-item>
           </el-sub-menu>
         </el-menu>
 
@@ -87,29 +93,29 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Expand, Fold, HomeFilled, Management, Setting, SwitchButton, UserFilled } from '@element-plus/icons-vue'
+import { Expand, Fold, HomeFilled, Management, Setting, SwitchButton } from '@element-plus/icons-vue'
 import { useSessionStore } from '../stores/session'
 import { showSuccess } from '../utils/feedback'
 
-// 布局壳层只负责左侧导航、页面容器和退出登录交互。
+// 布局壳层：承载左侧菜单、顶部用户入口和页面容器。
 const isCollapse = ref(false)
 const logoutDialogVisible = ref(false)
 const router = useRouter()
 const sessionStore = useSessionStore()
 
-// 展示名优先使用真实姓名，兜底才使用用户名。
+// 展示名优先使用真实姓名，兜底使用用户名。
 const displayName = computed(() => sessionStore.userInfo?.realName || sessionStore.userInfo?.username || '管理员')
 // 判断单个菜单是否可见。
 const canVisitMenu = (menuKey) => sessionStore.hasMenu(menuKey)
-// 判断是否应该显示系统设置分组。
-const hasSystemMenus = computed(() => sessionStore.hasAnyMenu(['system:user', 'system:dept', 'system:role']))
+// 判断是否显示系统设置分组。
+const hasSystemMenus = computed(() => sessionStore.hasAnyMenu(['system:user', 'system:dept', 'system:role', 'system:audit']))
 
 // 打开退出登录确认框。
 const handleLogout = () => {
   logoutDialogVisible.value = true
 }
 
-// 确认退出登录，清理本地会话并跳回登录页。
+// 确认退出登录，清理本地会话并跳转登录页。
 const confirmLogout = async () => {
   await sessionStore.logout()
   logoutDialogVisible.value = false

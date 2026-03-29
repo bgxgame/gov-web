@@ -10,7 +10,7 @@ Stack: Vue 3, Vite 8, Vue Router 4, Pinia, Element Plus, Axios, ECharts
 - Role/menu-driven navigation.
 - Project CRUD + submit to approval flow.
 - Approval task center (todo/done, approve/reject).
-- System pages: users, departments, roles.
+- System pages: users, departments, roles, audit logs.
 - Dashboard map for approved projects with map drill-down behavior.
 
 ## 2) Key files
@@ -49,7 +49,7 @@ Stack: Vue 3, Vite 8, Vue Router 4, Pinia, Element Plus, Axios, ECharts
   - Primary gate: `route.meta.menus`
   - Fallback gate: `route.meta.roles` only when no menu gate
 - Home route is resolved from menu priority:
-  - `dashboard:view`, `project:manage`, `project:engineering`, `system:user`, `system:dept`, `system:role`
+  - `dashboard:view`, `project:manage`, `project:engineering`, `system:user`, `system:dept`, `system:role`, `system:audit`
 
 ## 5) API surface used by frontend
 - Auth:
@@ -70,6 +70,7 @@ Stack: Vue 3, Vite 8, Vue Router 4, Pinia, Element Plus, Axios, ECharts
   - `POST /flow/approve`
 - System:
   - user/dept/role endpoints under `/system/*`
+  - `GET /system/audit/page`
 
 ## 6) Current business rules (must keep in sync with backend)
 - Project editable/submittable/deletable statuses: `0` (draft) and `3` (rejected).

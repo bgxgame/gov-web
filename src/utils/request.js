@@ -4,19 +4,10 @@ import { getErrorMessage, showError } from './feedback'
 import { logger } from './logger'
 
 /**
- * 职责：
- * 提供全局统一的 Axios 实例。
- *
- * 为什么存在：
- * 把 token 注入、`R(code, msg, data)` 解析、401 处理和中文错误提示收敛到一处，
- * 避免每个页面重复写网络兜底逻辑。
- *
- * 关键输入输出：
- * 输入是页面和 api 层发起的 HTTP 请求；
- * 输出是统一解析后的业务响应，或已经翻译成中文的错误对象。
- *
- * 关联链路：
- * api -> request -> 后端接口 -> 中文错误提示 / 登录失效跳转。
+ * 职责：提供全局统一的 Axios 实例。
+ * 为什么存在：集中处理 token 注入、统一响应 `R(code,msg,data)` 解析与错误提示。
+ * 关键输入输出：输入为页面发起的 HTTP 请求，输出为统一解析后的业务数据或错误对象。
+ * 关联链路：api 层 -> request -> 后端接口。
  */
 const service = axios.create({
   baseURL: appConfig.apiBaseUrl,
@@ -26,17 +17,16 @@ const service = axios.create({
 let redirectedBy401 = false
 
 /**
- * 作用：
- * 在请求发出前自动附带 Authorization 头。
+ * 作用：请求发出前自动附加 Authorization 头，并记录请求起始时间。
  */
 service.interceptors.request.use(
   (config) => {
-    config.metadata = {
-      startAt: Date.now()
-    }
+    config.metadata = { startAt: Date.now() }
     const token = localStorage.getItem('token')
     if (token) {
-      config.headers.Authorization = token
+      const headers = config.headers || {}
+      headers.Authorization = token
+      config.headers = headers
     }
     return config
   },
@@ -44,17 +34,14 @@ service.interceptors.request.use(
 )
 
 /**
- * 作用：
- * 统一处理后端 `R` 响应结构和网络异常。
- *
- * 为什么这样做：
- * 让页面层只关心业务成功分支，失败分支的中文提示和登录态兜底都集中在这里完成。
+ * 作用：统一处理后端 `R` 结构与网络错误，页面层只保留成功分支逻辑。
  */
 service.interceptors.response.use(
   (response) => {
     const res = response.data
     const requestUrl = response.config?.url
     const durationMs = Date.now() - Number(response.config?.metadata?.startAt || Date.now())
+
     if (res.code !== 200) {
       logger.warn('接口业务失败', { url: requestUrl, code: res.code, msg: res.msg, durationMs })
       if (res.code === 401) {
@@ -80,6 +67,7 @@ service.interceptors.response.use(
       apiError.__messageHandled = true
       return Promise.reject(apiError)
     }
+
     logger.debug('接口请求成功', { url: requestUrl, durationMs })
     return res
   },
@@ -92,6 +80,7 @@ service.interceptors.response.use(
       durationMs,
       status: error?.response?.status
     })
+
     if (!error?.__messageHandled) {
       showError(getErrorMessage(error, '网络请求失败'))
       error.__messageHandled = true
