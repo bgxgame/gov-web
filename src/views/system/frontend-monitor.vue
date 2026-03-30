@@ -121,7 +121,7 @@ import { useActivatedRefresh } from '../../utils/activated-refresh'
 import { showWarning } from '../../utils/feedback'
 
 // 前端监控页面：管理员统一查看浏览器侧异常、慢链路和关键运行日志。
-const logLevelOptions = ['warn', 'error']
+const logLevelOptions = ['info', 'warn', 'error']
 const logTypeOptions = ['request', 'route', 'runtime_error', 'action', 'app']
 
 const loading = ref(false)
@@ -198,6 +198,7 @@ function logLevelTagType(level) {
   const text = String(level || '').toLowerCase()
   if (text === 'error') return 'danger'
   if (text === 'warn') return 'warning'
+  if (text === 'info') return 'primary'
   return 'info'
 }
 

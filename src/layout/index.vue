@@ -1,6 +1,6 @@
 <template>
-  <el-container class="layout-wrapper">
-    <el-aside :width="isCollapse ? '64px' : '220px'" class="aside-container">
+    <el-container class="layout-shell">
+      <el-aside :width="isCollapse ? '64px' : '220px'" class="aside-container">
       <div class="aside-content">
         <div class="aside-logo">
           <span v-if="!isCollapse" class="logo-title">信创政务管理系统</span>
@@ -107,6 +107,7 @@ import { Expand, Fold, HomeFilled, Management, Setting, SwitchButton } from '@el
 import { useSessionStore } from '../stores/session'
 import { showSuccess } from '../utils/feedback'
 import { logUserAction, logger } from '../utils/logger'
+import { nowMs, reportPerfDuration } from '../utils/perf-metrics'
 import { resolveMenuTargetPath } from '../utils/menu-navigation'
 import { CACHEABLE_VIEW_NAMES, shouldKeepAliveRoute } from '../utils/router-cache'
 
@@ -156,6 +157,7 @@ async function handleMenuSelect(index) {
     return
   }
 
+  const navigateStartAt = nowMs()
   const fromPath = route.path
   logUserAction('menu_select', {
     fromPath,
@@ -168,11 +170,28 @@ async function handleMenuSelect(index) {
       fromPath,
       targetPath
     }, 'debug')
+    reportPerfDuration('menu_navigation', navigateStartAt, {
+      fromPath,
+      targetPath,
+      success: true
+    }, {
+      thresholdMs: 300,
+      normalLevel: 'info'
+    })
   } catch (error) {
     logger.warn('菜单跳转失败', {
       fromPath,
       targetPath,
       message: error?.message
+    })
+    reportPerfDuration('menu_navigation', navigateStartAt, {
+      fromPath,
+      targetPath,
+      success: false,
+      message: error?.message
+    }, {
+      thresholdMs: 300,
+      normalLevel: 'info'
     })
   } finally {
     if (navigatingPath.value === targetPath) {
@@ -212,11 +231,18 @@ async function confirmLogout() {
   overflow: hidden;
 }
 
+.layout-shell {
+  height: 100%;
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
 .aside-container {
   background-color: #304156;
-  transition: width 0.3s;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .aside-content {

@@ -235,6 +235,7 @@ import { deleteProject, fetchProjectPageByForm, getProjectDetail, saveProjectFor
 import { useSessionStore } from '../../stores/session'
 import { useActivatedRefresh } from '../../utils/activated-refresh'
 import { confirmAction, handleActionError, showError, showSuccess, showWarning } from '../../utils/feedback'
+import { nowMs, reportPerfDuration } from '../../utils/perf-metrics'
 import { createEmptyProjectForm, normalizeProjectForm } from '../../utils/project-models'
 import { PROVINCE_OPTIONS, appendMissingOption, getCityOptions, getDistrictOptions, hasCity, hasDistrict } from '../../utils/region-options'
 
@@ -263,6 +264,8 @@ const pagination = reactive({
 const tableLoading = ref(false)
 const tableData = ref([])
 const tableFetchSeq = ref(0)
+const editDialogRequestSeq = ref(0)
+const detailDialogRequestSeq = ref(0)
 const userOptions = ref([])
 const userOptionsLoaded = ref(false)
 const sessionStore = useSessionStore()
@@ -296,6 +299,41 @@ const editCityOptions = computed(() => appendMissingOption(getCityOptions(editDi
 const editDistrictOptions = computed(() =>
   appendMissingOption(getDistrictOptions(editDialog.form.province, editDialog.form.city), editDialog.form.district)
 )
+
+function buildCurrentUserOption() {
+  const userInfo = sessionStore.userInfo || {}
+  const userId = userInfo.userId
+  if (!userId) return null
+  return {
+    id: userId,
+    username: userInfo.username || '',
+    realName: userInfo.realName || userInfo.username || '',
+    phone: userInfo.phone || ''
+  }
+}
+
+function fillLeaderFromCurrentUser() {
+  const currentUser = buildCurrentUserOption()
+  if (!currentUser) return
+  editDialog.form.leaderUserId = currentUser.id
+  editDialog.form.leaderName = currentUser.realName || currentUser.username
+  editDialog.form.leaderPhone = currentUser.phone || editDialog.form.leaderPhone || ''
+}
+
+function updateTableRowStatus(projectId, status) {
+  const target = tableData.value.find((item) => String(item.id) === String(projectId))
+  if (!target) return false
+  target.status = status
+  return true
+}
+
+function removeTableRow(projectId) {
+  const originalLength = tableData.value.length
+  tableData.value = tableData.value.filter((item) => String(item.id) !== String(projectId))
+  if (tableData.value.length === originalLength) return false
+  pagination.total = Math.max(0, Number(pagination.total || 0) - 1)
+  return true
+}
 
 // 创建页面本地使用的默认项目表单。
 function createEmptyForm() {
@@ -401,13 +439,16 @@ function canDelete(row) {
 // 懒加载负责人候选列表，避免页面首屏就额外打接口。
 async function ensureUserOptionsLoaded() {
   if (userOptionsLoaded.value) return
-  const res = await getUserSimple()
-  let list = res.data || []
+
   if (isNormalUser) {
-    const currentUserId = String(sessionStore.userInfo?.userId || '')
-    list = list.filter((item) => String(item.id) === currentUserId)
+    const currentUser = buildCurrentUserOption()
+    userOptions.value = currentUser ? [currentUser] : []
+    userOptionsLoaded.value = true
+    return
   }
-  userOptions.value = list
+
+  const res = await getUserSimple()
+  userOptions.value = Array.isArray(res.data) ? res.data : []
   userOptionsLoaded.value = true
 }
 
@@ -461,22 +502,34 @@ function handleReset() {
 
 // 打开新增项目弹窗，并在普通用户场景下自动带出本人信息。
 async function openCreateDialog() {
+  const dialogStartAt = nowMs()
+  let success = false
+  let errorMessage = ''
   editDialog.mode = 'create'
   editDialog.form = createEmptyForm()
   editDialog.visible = true
-  editDialog.loading = true
+  editDialog.loading = false
   try {
-    await ensureUserOptionsLoaded()
     if (isNormalUser) {
-      const currentUser = userOptions.value.find((item) => String(item.id) === String(sessionStore.userInfo?.userId || ''))
-      if (currentUser) {
-        editDialog.form.leaderUserId = currentUser.id
-        editDialog.form.leaderName = currentUser.realName || currentUser.username
-        editDialog.form.leaderPhone = currentUser.phone || ''
-      }
+      fillLeaderFromCurrentUser()
     }
+    if (!userOptionsLoaded.value) {
+      void ensureUserOptionsLoaded().catch((error) => {
+        errorMessage = error?.message || ''
+      })
+    }
+    success = true
+  } catch (error) {
+    errorMessage = error?.message || ''
+    throw error
   } finally {
-    editDialog.loading = false
+    reportPerfDuration('project_manage_edit_dialog_open', dialogStartAt, {
+      mode: 'create',
+      success,
+      errorMessage
+    }, {
+      normalLevel: 'info'
+    })
   }
 }
 
@@ -486,18 +539,60 @@ async function openEditDialog(row) {
     showWarning('项目ID不存在，无法编辑')
     return
   }
+  const requestSeq = ++editDialogRequestSeq.value
+  const dialogStartAt = nowMs()
+  let optionsMs = 0
+  let detailMs = 0
+  let success = true
+  let fallbackUsed = false
+  let errorMessage = ''
   editDialog.mode = 'edit'
   editDialog.visible = true
-  editDialog.loading = true
+  editDialog.loading = false
+  editDialog.form = normalizeProject(row)
   try {
-    await ensureUserOptionsLoaded()
-    const res = await getProjectDetail(String(row.id))
-    editDialog.form = normalizeProject(res.data || row)
+    const optionTask = (async () => {
+      const optionsStartAt = nowMs()
+      await ensureUserOptionsLoaded()
+      optionsMs = Math.round(nowMs() - optionsStartAt)
+    })()
+
+    const detailTask = (async () => {
+      const detailStartAt = nowMs()
+      const res = await getProjectDetail(String(row.id))
+      detailMs = Math.round(nowMs() - detailStartAt)
+      if (requestSeq !== editDialogRequestSeq.value || !editDialog.visible || editDialog.mode !== 'edit') {
+        return
+      }
+      editDialog.form = normalizeProject(res.data || row)
+    })()
+
+    const [optionResult, detailResult] = await Promise.allSettled([optionTask, detailTask])
+    if (optionResult.status === 'rejected') {
+      errorMessage = optionResult.reason?.message || errorMessage
+    }
+    if (detailResult.status === 'rejected') {
+      success = false
+      fallbackUsed = true
+      errorMessage = detailResult.reason?.message || errorMessage
+      showError('加载项目详情失败')
+    }
   } catch (error) {
-    showError('加载项目详情失败')
-    editDialog.form = normalizeProject(row)
+    success = false
+    fallbackUsed = true
+    errorMessage = error?.message || ''
   } finally {
-    editDialog.loading = false
+    reportPerfDuration('project_manage_edit_dialog_open', dialogStartAt, {
+      mode: 'edit',
+      projectId: row.id,
+      success,
+      fallbackUsed,
+      optionsMs,
+      detailMs,
+      errorMessage
+    }, {
+      normalLevel: 'info'
+    })
   }
 }
 
@@ -544,19 +639,41 @@ async function handleDetail(row) {
     showWarning('项目ID不存在，无法查看详情')
     return
   }
+  const requestSeq = ++detailDialogRequestSeq.value
+  const detailStartAt = nowMs()
+  let success = true
+  let fallbackUsed = false
+  let errorMessage = ''
   detailDialog.visible = true
   detailDialog.loading = true
+  detailData.value = normalizeProject(row)
   try {
     const res = await getProjectDetail(String(row.id))
+    if (requestSeq !== detailDialogRequestSeq.value || !detailDialog.visible) {
+      return
+    }
     detailData.value = normalizeProject(res.data || row)
     if (!res.data) {
+      fallbackUsed = true
       showWarning('未找到该项目详情，已展示列表数据')
     }
   } catch (error) {
-    detailData.value = normalizeProject(row)
+    success = false
+    fallbackUsed = true
+    errorMessage = error?.message || ''
     showError('加载项目详情失败，已展示列表数据')
   } finally {
-    detailDialog.loading = false
+    if (requestSeq === detailDialogRequestSeq.value) {
+      detailDialog.loading = false
+    }
+    reportPerfDuration('project_manage_detail_dialog_open', detailStartAt, {
+      projectId: row.id,
+      success,
+      fallbackUsed,
+      errorMessage
+    }, {
+      normalLevel: 'info'
+    })
   }
 }
 
@@ -568,7 +685,11 @@ async function handleSubmit(row) {
     await confirmAction(`确认提交项目《${row.projectName}》进入审批流吗？`, { title: '提交确认', type: 'warning' })
     await submitProjectById(row.id)
     showSuccess('提交审批成功')
-    await fetchTableData({ silent: true })
+    if (!updateTableRowStatus(row.id, 1)) {
+      await fetchTableData({ silent: true })
+    } else {
+      markRefreshed()
+    }
   } catch (error) {
     handleActionError(error, '提交审批失败，请稍后重试')
   } finally {
@@ -588,7 +709,11 @@ async function handleDelete(row) {
     await confirmAction(`确认删除项目《${row.projectName}》吗？`, { title: '删除确认', type: 'warning' })
     await deleteProject(String(row.id))
     showSuccess('删除成功')
-    await fetchTableData({ silent: true })
+    if (!removeTableRow(row.id)) {
+      await fetchTableData({ silent: true })
+    } else {
+      markRefreshed()
+    }
   } catch (error) {
     handleActionError(error, '删除项目失败，请稍后重试')
   } finally {

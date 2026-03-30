@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run:*)",
+      "Bash(npm exec:*)",
+      "Bash(npm test:*)",
+      "Bash(python -:*)",
+      "Bash(python -c \"from pathlib import Path; logs=sorted\\(Path\\(''c:/Users/brace/Documents/work/gov/gov-web/logs''\\).glob\\(''frontend-build-*.log''\\), key=lambda p: p.stat\\(\\).st_mtime, reverse=True\\); print\\(logs[0]\\)\")",
+      "Bash(./mvnw -q -DskipTests compile)",
+      "Bash(mvn -q -DskipTests compile)",
+      "Bash(mvn -q -DskipTests compile -f \"/c/Users/brace/Documents/work/gov/gov-project-backend/pom.xml\")",
+      "Bash(mvn -q test -f \"/c/Users/brace/Documents/work/gov/gov-project-backend/pom.xml\")",
+      "Bash(mvn -q package -DskipTests -f \"/c/Users/brace/Documents/work/gov/gov-project-backend/pom.xml\")"
+    ]
+  }
+}

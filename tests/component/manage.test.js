@@ -18,6 +18,16 @@ const confirmAction = vi.fn()
 const showError = vi.fn()
 const showSuccess = vi.fn()
 const showWarning = vi.fn()
+const sessionState = {
+  userInfo: {
+    userId: 10,
+    deptId: 9,
+    username: 'zhangsan',
+    realName: '张三',
+    phone: '13800000000'
+  },
+  hasRole: vi.fn(() => false)
+}
 
 vi.mock('../../src/api/system', () => ({
   getUserSimple
@@ -32,10 +42,7 @@ vi.mock('../../src/api/project', () => ({
 }))
 
 vi.mock('../../src/stores/session', () => ({
-  useSessionStore: () => ({
-    userInfo: { userId: 10, deptId: 9 },
-    hasRole: () => false
-  })
+  useSessionStore: () => sessionState
 }))
 
 vi.mock('../../src/utils/feedback', () => ({
@@ -80,9 +87,18 @@ const globalStubs = {
   ElDescriptionsItem: { template: '<div><slot /></div>' }
 }
 
-describe('manage view', () => {
+describe('项目管理页', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.resetModules()
+    sessionState.userInfo = {
+      userId: 10,
+      deptId: 9,
+      username: 'zhangsan',
+      realName: '张三',
+      phone: '13800000000'
+    }
+    sessionState.hasRole.mockImplementation(() => false)
   })
 
   async function flushView() {
@@ -92,9 +108,40 @@ describe('manage view', () => {
   }
 
   /**
-   * 作用：验证页面首屏只查列表，负责人候选只在弹窗打开时加载且只加载一次。
+   * 作用：验证普通用户新增项目时直接复用当前用户信息，不再额外请求负责人列表。
    */
-  it('should fetch table data on mount and lazy load user options only once', async () => {
+  it('普通用户打开新增弹窗时应直接复用当前用户信息', async () => {
+    fetchProjectPageByForm.mockResolvedValue({
+      data: { records: [], total: 0 }
+    })
+
+    const ManageView = (await import('../../src/views/project/manage.vue')).default
+    const wrapper = mount(ManageView, {
+      global: {
+        stubs: globalStubs
+      }
+    })
+
+    await flushView()
+
+    expect(fetchProjectPageByForm).toHaveBeenCalledTimes(1)
+
+    const buttons = wrapper.findAll('button')
+    await buttons[2].trigger('click')
+    await flushView()
+    await buttons[2].trigger('click')
+    await flushView()
+
+    expect(getUserSimple).not.toHaveBeenCalled()
+    expect(wrapper.html()).toContain('张三 (zhangsan)')
+    expect(wrapper.html()).toContain('13800000000')
+  })
+
+  /**
+   * 作用：验证管理员首次打开新增弹窗时才懒加载负责人列表，重复打开不会重复请求。
+   */
+  it('管理员打开新增弹窗时应只懒加载一次负责人列表', async () => {
+    sessionState.hasRole.mockImplementation((role) => role === 'admin')
     fetchProjectPageByForm.mockResolvedValue({
       data: { records: [], total: 0 }
     })
@@ -113,8 +160,6 @@ describe('manage view', () => {
     })
 
     await flushView()
-
-    expect(fetchProjectPageByForm).toHaveBeenCalledTimes(1)
 
     const buttons = wrapper.findAll('button')
     await buttons[2].trigger('click')

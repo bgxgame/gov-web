@@ -19,7 +19,10 @@ let pendingQueue = []
 
 function shouldReport(log) {
   if (!appConfig.frontendMonitorEnabled || !log) return false
-  return REPORTABLE_LEVELS.has(String(log.level || '').toLowerCase())
+  const level = String(log.level || '').toLowerCase()
+  if (REPORTABLE_LEVELS.has(level)) return true
+  const payload = log?.args?.[1]
+  return Boolean(level === 'info' && payload && typeof payload === 'object' && payload.perfMetric === true)
 }
 
 function resolveLogType(log) {

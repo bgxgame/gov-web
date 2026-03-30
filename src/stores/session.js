@@ -128,7 +128,8 @@ export const useSessionStore = defineStore('session', {
       token: localStorage.getItem('token') || '',
       userInfo: cachedUserInfo,
       userInfoSource: cachedUserInfo ? 'cache' : '',
-      _userInfoPromise: null
+      _userInfoPromise: null,
+      _lastEnsureServerAt: 0
     }
   },
   getters: {
@@ -160,6 +161,9 @@ export const useSessionStore = defineStore('session', {
     setUserInfo(userInfo, source = 'manual') {
       this.userInfo = userInfo || null
       this.userInfoSource = userInfo ? source : ''
+      if (userInfo && (source === 'server' || source === 'login')) {
+        this._lastEnsureServerAt = Date.now()
+      }
       if (userInfo) {
         localStorage.setItem(USER_KEY, JSON.stringify(userInfo))
       } else {
@@ -175,6 +179,7 @@ export const useSessionStore = defineStore('session', {
      */
     clearSession() {
       this._userInfoPromise = null
+      this._lastEnsureServerAt = 0
       this.userInfoSource = ''
       this.setToken('')
       this.setUserInfo(null)
@@ -213,6 +218,7 @@ export const useSessionStore = defineStore('session', {
       const res = await getCurrentUser()
       const userInfo = normalizeUserInfo(res.data, this.userInfo?.username)
       this.setUserInfo(userInfo, 'server')
+      this._lastEnsureServerAt = Date.now()
       return userInfo
     },
 
@@ -222,8 +228,9 @@ export const useSessionStore = defineStore('session', {
      * 关键输入输出：输入为是否强制刷新，输出为当前用户对象或 `null`。
      * 关联链路：路由守卫、菜单切换、刷新页面后的权限恢复。
      */
-    async ensureUserInfo(forceRefresh = false) {
+    async ensureUserInfo(forceRefresh = false, options = {}) {
       if (!this.token) return null
+      const minForceRefreshIntervalMs = Number(options?.minForceRefreshIntervalMs || 0)
 
       const hasUserInfoReady =
         !forceRefresh &&
@@ -235,11 +242,25 @@ export const useSessionStore = defineStore('session', {
         return this.userInfo
       }
 
+      const hasRecentServerSync =
+        forceRefresh &&
+        minForceRefreshIntervalMs > 0 &&
+        this._lastEnsureServerAt > 0 &&
+        Date.now() - this._lastEnsureServerAt < minForceRefreshIntervalMs &&
+        this.userInfo &&
+        Array.isArray(this.userInfo.roleCodes) &&
+        Array.isArray(this.userInfo.menuKeys)
+
+      if (hasRecentServerSync) {
+        return this.userInfo
+      }
+
       if (!this._userInfoPromise) {
         this._userInfoPromise = getCurrentUser()
           .then((res) => {
             const userInfo = normalizeUserInfo(res.data, this.userInfo?.username)
             this.setUserInfo(userInfo, 'server')
+            this._lastEnsureServerAt = Date.now()
             return userInfo
           })
           .finally(() => {

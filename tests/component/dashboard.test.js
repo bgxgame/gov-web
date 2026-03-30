@@ -5,8 +5,10 @@ const fetchProjectMapSummaryByFilters = vi.fn()
 const fetchProjectMapListByFilters = vi.fn()
 const getProjectDetail = vi.fn()
 const showError = vi.fn()
+const logUserAction = vi.fn()
 const logger = {
   debug: vi.fn(),
+  info: vi.fn(),
   warn: vi.fn(),
   error: vi.fn()
 }
@@ -42,7 +44,8 @@ vi.mock('../../src/utils/feedback', () => ({
 }))
 
 vi.mock('../../src/utils/logger', () => ({
-  logger
+  logger,
+  logUserAction
 }))
 
 vi.mock('echarts/core', () => ({

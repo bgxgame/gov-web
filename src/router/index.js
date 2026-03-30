@@ -3,6 +3,7 @@ import { resolveHomePathFromCachedUserInfo, useSessionStore } from '../stores/se
 import { appConfig } from '../config/app-config'
 import { showError } from '../utils/feedback'
 import { logUserAction, logger } from '../utils/logger'
+import { nowMs, reportPerfAction } from '../utils/perf-metrics'
 import { finishRouteProgress, startRouteProgress } from '../utils/route-progress'
 
 /**
@@ -136,13 +137,6 @@ function resolveProtectedEntryPath() {
   return resolveHomePathFromCachedUserInfo() || '/dashboard'
 }
 
-function nowMs() {
-  if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
-    return performance.now()
-  }
-  return Date.now()
-}
-
 function resolveDeniedNavigationTarget(to, from, sessionStore) {
   if (from?.path && from.path !== to.path) {
     return false
@@ -151,10 +145,23 @@ function resolveDeniedNavigationTarget(to, from, sessionStore) {
   return homePath && homePath !== to.path ? homePath : false
 }
 
+function shouldReuseCachedUserInfo(sessionStore, to) {
+  if (!sessionStore.userInfo || sessionStore.userInfoSource !== 'cache') return false
+  const requiredMenus = to.meta?.menus || []
+  if (requiredMenus.length > 0) {
+    return sessionStore.hasAnyMenu(requiredMenus)
+  }
+  const requiredRoles = to.meta?.roles || []
+  if (requiredRoles.length > 0) {
+    return sessionStore.hasAnyRole(requiredRoles)
+  }
+  return true
+}
+
 /**
  * 职责：统一处理登录校验、用户信息补齐和菜单/角色权限判断。
  * 为什么存在：让每次路由切换都走同一套会话与权限逻辑，避免页面层自行兜底。
- * 关键输入输出：输入为目标路由、当前会话和用户权限，输出为放行、阻止或重定向决策。
+ * 关键输入输出：输入为目标路由、当前会话和用户权限；输出为放行、阻止或重定向决策。
  * 关联链路：登录跳转、菜单切换、刷新页面后的权限恢复。
  */
 router.beforeEach(async (to, from, next) => {
@@ -211,9 +218,11 @@ router.beforeEach(async (to, from, next) => {
   }
 
   try {
-    const ensureStartAt = nowMs()
-    await sessionStore.ensureUserInfo()
-    guardMetrics.ensureUserInfoMs = Math.round(nowMs() - ensureStartAt)
+    if (!shouldReuseCachedUserInfo(sessionStore, to)) {
+      const ensureStartAt = nowMs()
+      await sessionStore.ensureUserInfo()
+      guardMetrics.ensureUserInfoMs = Math.round(nowMs() - ensureStartAt)
+    }
   } catch (error) {
     guardMetrics.decision = 'logout_and_redirect_login'
     logger.error('补拉当前用户信息失败，已清理会话', {
@@ -231,7 +240,7 @@ router.beforeEach(async (to, from, next) => {
     if (sessionStore.userInfoSource === 'cache') {
       try {
         const refreshStartAt = nowMs()
-        await sessionStore.ensureUserInfo(true)
+        await sessionStore.ensureUserInfo(true, { minForceRefreshIntervalMs: 45000 })
         guardMetrics.forceRefreshPermissionMs = Math.round(nowMs() - refreshStartAt)
       } catch (error) {
         guardMetrics.decision = 'force_refresh_failed_redirect_login'
@@ -313,6 +322,13 @@ router.afterEach((to, from, failure) => {
       hasSlowRoute: routeMetrics ? routeMetrics.durationMs >= routeMetrics.thresholdMs : false,
       failure: Boolean(failure)
     }
+    reportPerfAction('route_navigation_settled', {
+      ...routePerfPayload,
+      durationMs: Number(routePerfPayload.routeDurationMs || routePerfPayload.guardDurationMs || 0)
+    }, {
+      thresholdMs: Number(routePerfPayload.routeThresholdMs || appConfig.slowRouteThreshold),
+      normalLevel: 'info'
+    })
     if (routePerfPayload.hasSlowGuard || routePerfPayload.hasSlowRoute) {
       logger.warn('路由性能剖析', routePerfPayload)
     } else {

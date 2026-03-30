@@ -2,6 +2,11 @@
 
 前端技术栈：`Vue3 + Vite + Pinia + Vue Router + Element Plus + Axios + ECharts`。
 
+## 架构文档
+- 前端专版架构说明：[`ARCHITECTURE_FRONTEND.md`](./ARCHITECTURE_FRONTEND.md)
+- 全项目总览（前后端）：[`../PROJECT_ARCHITECTURE.md`](../PROJECT_ARCHITECTURE.md)
+- 前端性能埋点事件说明：[`docs/PERF_EVENTS.md`](./docs/PERF_EVENTS.md)
+
 ## 开发命令
 - `npm run dev`：启动开发环境
 - `npm run build`：构建生产包

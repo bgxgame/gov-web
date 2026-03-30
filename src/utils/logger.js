@@ -12,6 +12,8 @@ const SENSITIVE_KEYS = ['password', 'token', 'authorization', 'phone', 'secret',
 const RUNTIME_LOG_KEY = '__gov_runtime_logs__'
 let runtimeObserversInstalled = false
 const RUNTIME_LOG_EVENT = '__gov_runtime_log__'
+let bufferedRuntimeLogs = null
+let runtimeLogsFlushTimer = null
 
 function resolveCurrentLevel() {
   const configured = appConfig.logLevel
@@ -49,39 +51,61 @@ function sanitizeValue(value, depth = 0) {
 }
 
 function readBufferedLogs() {
+  if (bufferedRuntimeLogs) return bufferedRuntimeLogs
   if (typeof window === 'undefined') return []
   try {
     const raw = window.sessionStorage?.getItem(RUNTIME_LOG_KEY)
-    if (!raw) return []
+    if (!raw) {
+      bufferedRuntimeLogs = []
+      return bufferedRuntimeLogs
+    }
     const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed : []
+    bufferedRuntimeLogs = Array.isArray(parsed) ? parsed : []
+    return bufferedRuntimeLogs
   } catch (error) {
-    return []
+    bufferedRuntimeLogs = []
+    return bufferedRuntimeLogs
   }
+}
+
+function persistRuntimeLogsSoon() {
+  if (typeof window === 'undefined' || runtimeLogsFlushTimer) return
+  const flush = () => {
+    runtimeLogsFlushTimer = null
+    if (typeof window === 'undefined') return
+    const normalizedLogs = Array.isArray(bufferedRuntimeLogs) ? bufferedRuntimeLogs : []
+    try {
+      if (window.sessionStorage) {
+        window.sessionStorage.setItem(RUNTIME_LOG_KEY, JSON.stringify(normalizedLogs))
+      }
+    } catch (error) {
+      // 会话存储不可用时静默忽略，仅保留控制台输出。
+    }
+    window.__GOV_APP_LOGS__ = normalizedLogs
+  }
+  if (typeof window.requestIdleCallback === 'function') {
+    runtimeLogsFlushTimer = window.requestIdleCallback(flush, { timeout: 500 })
+    return
+  }
+  runtimeLogsFlushTimer = window.setTimeout(flush, 120)
 }
 
 function writeBufferedLogs(logs) {
   if (typeof window === 'undefined') return
-  const normalizedLogs = Array.isArray(logs) ? logs : []
-  try {
-    if (window.sessionStorage) {
-      window.sessionStorage.setItem(RUNTIME_LOG_KEY, JSON.stringify(normalizedLogs))
-    }
-  } catch (error) {
-    // 会话存储不可用时静默忽略，仅保留控制台输出。
-  }
-  window.__GOV_APP_LOGS__ = normalizedLogs
+  bufferedRuntimeLogs = Array.isArray(logs) ? logs : []
+  window.__GOV_APP_LOGS__ = bufferedRuntimeLogs
+  persistRuntimeLogsSoon()
 }
 
-function appendRuntimeLog(level, args) {
+function appendRuntimeLogSanitized(level, sanitizedArgs) {
   if (typeof window === 'undefined') return
   const nextLog = {
     time: new Date().toISOString(),
     level,
-    args: args.map((item) => sanitizeValue(item))
+    args: Array.isArray(sanitizedArgs) ? sanitizedArgs : []
   }
   const limit = Math.max(20, Number(appConfig.runtimeLogBufferSize || 200))
-  const logs = readBufferedLogs()
+  const logs = readBufferedLogs().slice()
   logs.push(nextLog)
   writeBufferedLogs(logs.slice(-limit))
   try {
@@ -92,10 +116,11 @@ function appendRuntimeLog(level, args) {
 }
 
 function print(level, args) {
-  appendRuntimeLog(level, args)
+  const sanitizedArgs = args.map((item) => sanitizeValue(item))
+  appendRuntimeLogSanitized(level, sanitizedArgs)
   if (!shouldLog(level)) return
   const fn = console[level] || console.log
-  fn(`[${appConfig.appName}]`, ...args.map((item) => sanitizeValue(item)))
+  fn(`[${appConfig.appName}]`, ...sanitizedArgs)
 }
 
 export const logger = {
@@ -124,7 +149,7 @@ export function logUserAction(action, payload = {}, level = 'info') {
   const normalizedLevel = LEVEL_MAP[level] ? level : 'info'
   logger[normalizedLevel]('用户操作', {
     action: String(action || 'unknown'),
-    ...sanitizeValue(payload)
+    ...payload
   })
 }
 

@@ -95,11 +95,20 @@ export function filterCountyGeoJsonByCity(countyGeoJson, cityGeoJson, cityName) 
 }
 
 export function getFeatureCenter(feature) {
+  if (!feature) return null
+  if (Object.prototype.hasOwnProperty.call(feature, '__cachedCenter')) {
+    return feature.__cachedCenter
+  }
+
   const cp = feature?.properties?.cp
   if (Array.isArray(cp) && cp.length >= 2) {
     const lng = toNumericCoordinate(cp[0])
     const lat = toNumericCoordinate(cp[1])
-    if (lng !== null && lat !== null) return [lng, lat]
+    if (lng !== null && lat !== null) {
+      const center = [lng, lat]
+      feature.__cachedCenter = center
+      return center
+    }
   }
 
   let minLng = Infinity
@@ -118,10 +127,13 @@ export function getFeatureCenter(feature) {
   })
 
   if (!Number.isFinite(minLng) || !Number.isFinite(minLat) || !Number.isFinite(maxLng) || !Number.isFinite(maxLat)) {
+    feature.__cachedCenter = null
     return null
   }
 
-  return [Number(((minLng + maxLng) / 2).toFixed(6)), Number(((minLat + maxLat) / 2).toFixed(6))]
+  const center = [Number(((minLng + maxLng) / 2).toFixed(6)), Number(((minLat + maxLat) / 2).toFixed(6))]
+  feature.__cachedCenter = center
+  return center
 }
 
 export function buildRegionCountMap(rows = [], field) {

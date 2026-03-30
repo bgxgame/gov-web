@@ -23,6 +23,7 @@ export function useActivatedRefresh(refreshFn, options = {}) {
 
   const lastRefreshedAt = ref(0)
   let activationCount = 0
+  let pendingRefreshPromise = null
 
   // 记录页面最近一次成功拉取时间，供下一次激活判断是否需要刷新。
   function markRefreshed() {
@@ -31,10 +32,16 @@ export function useActivatedRefresh(refreshFn, options = {}) {
 
   // 满足条件时触发一次静默刷新。
   async function refreshIfNeeded() {
+    if (pendingRefreshPromise) return pendingRefreshPromise
     if (typeof refreshFn !== 'function') return
     if (!shouldRefresh()) return
     if (lastRefreshedAt.value > 0 && Date.now() - lastRefreshedAt.value < minIntervalMs) return
-    await refreshFn()
+    pendingRefreshPromise = Promise.resolve()
+      .then(() => refreshFn())
+      .finally(() => {
+        pendingRefreshPromise = null
+      })
+    return pendingRefreshPromise
   }
 
   onActivated(async () => {

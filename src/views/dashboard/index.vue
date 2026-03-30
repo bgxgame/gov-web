@@ -27,7 +27,7 @@
             <div class="summary-row">
               <el-tag type="info">当前层级：{{ levelLabel }}</el-tag>
               <el-tag type="primary">当前项目数：{{ currentProjectCount }}</el-tag>
-              <el-tag type="warning">省内可见项目总数：{{ provinceProjectCount }}</el-tag>
+              <el-tag type="warning">省级可见项目：{{ provinceProjectCount }}</el-tag>
             </div>
           </div>
           <div class="header-actions">
@@ -48,7 +48,7 @@
             </div>
             <div v-else-if="!pageBusy && currentProjectCount === 0" class="overlay-card overlay-card--empty">
               <div class="overlay-title">当前层级暂无项目</div>
-              <div class="overlay-text">当前权限范围内暂无审批通过项目，仍可继续查看行政区边界。</div>
+              <div class="overlay-text">当前权限范围内暂时无审批通过项目，仍可继续查看行政区边界。</div>
             </div>
           </div>
         </section>
@@ -68,7 +68,7 @@
               <strong class="stat-value">{{ currentProjectCount }}</strong>
             </article>
             <article class="stat-card">
-              <span class="stat-label">{{ viewLevel === 'county' ? '缺失坐标' : '最高值' }}</span>
+              <span class="stat-label">{{ viewLevel === 'county' ? '项目数量' : '区域数量' }}</span>
               <strong class="stat-value">{{ secondaryStatValue }}</strong>
             </article>
           </div>
@@ -107,7 +107,7 @@
           <el-descriptions-item label="项目地址" :span="2">{{ detailDialog.data.address || '-' }}</el-descriptions-item>
           <el-descriptions-item label="负责人">{{ detailDialog.data.leaderName || '-' }}</el-descriptions-item>
           <el-descriptions-item label="联系电话">{{ detailDialog.data.leaderPhone || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="省市区" :span="2">
+          <el-descriptions-item label="所在区域" :span="2">
             {{ [detailDialog.data.province, detailDialog.data.city, detailDialog.data.district].filter(Boolean).join(' / ') || '-' }}
           </el-descriptions-item>
           <el-descriptions-item label="经度">{{ detailDialog.data.longitude ?? '-' }}</el-descriptions-item>
@@ -139,6 +139,7 @@ import {
 } from '../../utils/map-drilldown'
 import { showError } from '../../utils/feedback'
 import { logger } from '../../utils/logger'
+import { nowMs, reportPerfAction, reportPerfDuration, resolveDurationMs } from '../../utils/perf-metrics'
 
 const ROOT_MAP_KEY = 'dashboard-province-map'
 const MAP_CLICK_EVENT = 'click'
@@ -163,6 +164,7 @@ const detailDialog = reactive({
   loading: false,
   data: {}
 })
+const detailDialogRequestSeq = ref(0)
 
 let chart = null
 let echartsModulesPromise = null
@@ -179,6 +181,14 @@ let mapResourceManifestPromise = null
 const echartsRuntime = {
   init: null,
   registerMap: null
+}
+
+function resolveFilteredCountyGeoJsonCacheKey(cityAdcode) {
+  return `county-filtered|${String(cityAdcode || '').trim()}`
+}
+
+function resolvePerfThresholdMs(multiplier = 1) {
+  return Math.max(200, Math.round(Number(appConfig.slowRequestThreshold || 800) * Number(multiplier || 1)))
 }
 
 function isHtmlDocumentText(text) {
@@ -213,10 +223,10 @@ async function parseJsonPayload(response, options = {}) {
     return null
   }
 
-  // Vite 开发态在找不到静态资源时可能回退 index.html，这里要识别并继续走下一个候选文件。
+  // 如果返回的是 HTML，通常说明当前环境缺少对应的静态 JSON 资源。
   if (contentType.includes('text/html') || isHtmlDocumentText(normalizedText)) {
     if (requiredResource) {
-      throw new Error(`${payloadLabel}读取失败：${resource}`)
+      throw new Error(`${payloadLabel}加载失败，返回了异常页面：${resource}`)
     }
     return null
   }
@@ -229,13 +239,6 @@ async function parseJsonPayload(response, options = {}) {
     }
     return null
   }
-}
-
-function nowMs() {
-  if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
-    return performance.now()
-  }
-  return Date.now()
 }
 
 function normalizeProjectRow(row) {
@@ -275,6 +278,11 @@ function sumProjectCount(rows = []) {
   return rows.reduce((total, item) => total + Number(item.projectCount || 0), 0)
 }
 
+const countyProjectRowsSorted = computed(() => (
+  countyProjectRows.value
+    .slice()
+    .sort((a, b) => String(a.projectName || '').localeCompare(String(b.projectName || ''), 'zh-CN'))
+))
 const pageBusy = computed(() => initializing.value || switchingLevel.value)
 const levelLabel = computed(() => {
   if (viewLevel.value === 'province') return '省级总览'
@@ -302,23 +310,21 @@ const panelTitle = computed(() => {
 const panelSubtitle = computed(() => {
   if (viewLevel.value === 'province') return '点击右侧城市或地图区域，继续下钻到区县层'
   if (viewLevel.value === 'city') return '区县支持从右侧列表和地图区域双向联动'
-  return '点击项目可查看详情，缺失坐标项目会回退到区县中心展示'
+  return '点击项目可查看详情。缺失坐标的项目会回退到区县中心点展示。'
 })
 const panelRows = computed(() => {
   if (viewLevel.value === 'county') {
-    return countyProjectRows.value
-      .slice()
-      .sort((a, b) => String(a.projectName || '').localeCompare(String(b.projectName || ''), 'zh-CN'))
-      .map((item) => ({
-        key: `project-${item.id}`,
-        type: 'project',
-        active: false,
-        title: item.projectName || '未命名项目',
-        subtitle: item.address || '暂无项目地址',
-        count: item.district || '-',
-        hint: '查看详情',
-        projectId: item.id
-      }))
+    return countyProjectRowsSorted.value.map((item) => ({
+      key: `project-${item.id}`,
+      type: 'project',
+      active: false,
+      title: item.projectName || '未命名项目',
+      subtitle: item.address || '暂无项目地址',
+      count: item.district || '-',
+      hint: '查看详情',
+      projectId: item.id,
+      project: item
+    }))
   }
 
   const rows = viewLevel.value === 'province' ? provinceSummaryRows.value : districtSummaryRows.value
@@ -327,7 +333,7 @@ const panelRows = computed(() => {
     type: 'summary',
     active: viewLevel.value === 'city' && item.regionName === selectedDistrict.value,
     title: item.regionName,
-    subtitle: `审批通过项目 ${item.projectCount} 个`,
+    subtitle: `审批通过项目：${item.projectCount}`,
     count: item.projectCount,
     hint: viewLevel.value === 'province' ? '下钻到区县' : '查看项目',
     regionName: item.regionName
@@ -336,7 +342,7 @@ const panelRows = computed(() => {
 const panelEmptyText = computed(() => (
   viewLevel.value === 'county'
     ? '当前区县暂无审批通过项目'
-    : '当前层级暂无可展示的行政区统计'
+    : '当前层级暂无区域汇总数据'
 ))
 const secondaryStatValue = computed(() => {
   if (viewLevel.value === 'county') return missingCoordinateCount.value
@@ -401,7 +407,7 @@ async function tryLoadGeoJsonByResource(cacheKey, resource, requiredResource) {
   const response = await fetch(resource)
   if (!response.ok) {
     if (requiredResource) {
-      throw new Error(`地图资源读取失败：${resource}`)
+      throw new Error(`地图资源加载失败：${resource}`)
     }
     missingResourceCache.add(resource)
     return null
@@ -432,15 +438,14 @@ async function loadMapGeoJson(level, scope = {}) {
   const fetchPromise = (async () => {
     const manifest = await loadMapResourceManifest()
     const manifestCandidates = resolveManifestMapResource(level, scope, manifest)
-    // 当前主资源模式固定为省/市/区三级总图。
-    // 只有显式提供 manifest 时，才启用更细粒度的单城市/单区县资源。
+    // 保留通用的省、市、区县资源，作为清单资源缺失时的兜底候选。
     const fallbackCandidates = MAP_RESOURCE_FILES[level] ? [MAP_RESOURCE_FILES[level]] : []
     const candidates = manifestCandidates.length > 0
       ? [...manifestCandidates, ...fallbackCandidates]
       : fallbackCandidates
 
     if (candidates.length === 0) {
-      throw new Error(`未配置 ${level} 层级地图资源`)
+      throw new Error(`${level} 层级缺少可用地图资源`)
     }
 
     for (let index = 0; index < candidates.length; index += 1) {
@@ -452,7 +457,7 @@ async function loadMapGeoJson(level, scope = {}) {
       }
     }
 
-    throw new Error(`未找到 ${level} 层级地图资源`)
+    throw new Error(`${level} 层级未找到可用地图资源`)
   })()
     .finally(() => {
       geoJsonPromiseCache.delete(cacheKey)
@@ -480,6 +485,16 @@ async function fetchMapSummary(level, filters = {}, force = false) {
   summaryCache.set(cacheKey, rows)
 
   const durationMs = Math.round(nowMs() - startAt)
+  reportPerfAction('dashboard_fetch_map_summary', {
+    durationMs,
+    level,
+    force,
+    count: rows.length,
+    ...filters
+  }, {
+    thresholdMs: resolvePerfThresholdMs(1),
+    normalLevel: 'info'
+  })
   if (durationMs >= appConfig.slowRequestThreshold) {
     logger.warn('地图汇总接口耗时偏高', { durationMs, level, count: rows.length, ...filters })
   } else {
@@ -498,6 +513,15 @@ async function fetchMapProjects(filters = {}, force = false) {
   projectCache.set(cacheKey, rows)
 
   const durationMs = Math.round(nowMs() - startAt)
+  reportPerfAction('dashboard_fetch_map_points', {
+    durationMs,
+    force,
+    count: rows.length,
+    ...filters
+  }, {
+    thresholdMs: resolvePerfThresholdMs(1),
+    normalLevel: 'info'
+  })
   if (durationMs >= appConfig.slowRequestThreshold) {
     logger.warn('地图点位接口耗时偏高', { durationMs, count: rows.length, ...filters })
   } else {
@@ -532,7 +556,7 @@ function requestIdleTask(task) {
     Promise.resolve()
       .then(task)
       .catch((error) => {
-        logger.debug('后台预热任务已忽略异常', { message: error?.message })
+        logger.debug('地图资源预热已跳过', { message: error?.message })
       })
   }
   if (typeof window.requestIdleCallback === 'function') {
@@ -622,23 +646,32 @@ async function warmupTopDistrictResources(limit = DISTRICT_FILE_WARMUP_LIMIT) {
   await Promise.all(tasks)
 }
 
-async function prepareCurrentLevelResources() {
-  const tasks = [ensureEchartsReady(), loadMapGeoJson('city', { provinceName: ROOT_PROVINCE_NAME })]
-  if (viewLevel.value !== 'province') {
-    tasks.push(
-      resolveSelectedCityScope().then((scope) => loadMapGeoJson('county', scope))
-    )
+async function warmupCurrentLevelResources() {
+  const tasks = []
+  if (viewLevel.value === 'city') {
+    const cityScope = await resolveSelectedCityScope()
+    if (cityScope?.cityAdcode) {
+      tasks.push(loadMapGeoJson('county', cityScope))
+    }
   }
   if (viewLevel.value === 'county') {
+    const cityScope = await resolveSelectedCityScope()
+    if (cityScope?.cityAdcode) {
+      const countyGeoJsonPromise = loadMapGeoJson('county', cityScope)
+      tasks.push(countyGeoJsonPromise)
+      tasks.push((async () => {
+        const districtScope = await resolveDistrictScopeByName(selectedDistrict.value, cityScope, await countyGeoJsonPromise)
+        if (districtScope?.districtAdcode) {
+          return loadMapGeoJson('district', districtScope)
+        }
+        return null
+      })())
+    }
     tasks.push(loadMapGeoJson('province', { provinceName: ROOT_PROVINCE_NAME }))
-    tasks.push(
-      resolveDistrictScopeByName(selectedDistrict.value).then((scope) => {
-        if (!scope?.districtAdcode) return null
-        return loadMapGeoJson('district', scope)
-      })
-    )
   }
-  await Promise.all(tasks)
+  if (tasks.length > 0) {
+    await Promise.all(tasks)
+  }
 }
 
 function warmupNextLevelResources() {
@@ -660,6 +693,17 @@ function warmupNextLevelResources() {
       await warmupTopDistrictResources()
     }
   })
+}
+
+async function getScopedCountyGeoJson(cityGeoJson, cityScope) {
+  const countyGeoJson = await loadMapGeoJson('county', cityScope)
+  const filteredCacheKey = resolveFilteredCountyGeoJsonCacheKey(cityScope?.cityAdcode)
+  if (geoJsonCache.has(filteredCacheKey)) {
+    return geoJsonCache.get(filteredCacheKey)
+  }
+  const scopedCountyGeoJson = filterCountyGeoJsonByCity(countyGeoJson, cityGeoJson, selectedCity.value)
+  geoJsonCache.set(filteredCacheKey, scopedCountyGeoJson)
+  return scopedCountyGeoJson
 }
 
 function buildRegionBubbleData(features, countMap, metaKey) {
@@ -690,8 +734,7 @@ function buildProvinceScene(cityGeoJson) {
   }
 }
 
-function buildCityScene(cityGeoJson, countyGeoJson) {
-  const scopedCountyGeoJson = filterCountyGeoJsonByCity(countyGeoJson, cityGeoJson, selectedCity.value)
+function buildCityScene(cityGeoJson, scopedCountyGeoJson) {
   const features = scopedCountyGeoJson.features || []
   if (features.length === 0) {
     throw new Error(`${selectedCity.value || '当前城市'}缺少区县地图资源`)
@@ -739,7 +782,7 @@ function buildCountyScene(cityGeoJson, districtGeoJson, provinceGeoJson) {
       return {
         name: item.projectName,
         value: [Number(point[0]), Number(point[1]), item.id, item.address || '-'],
-        meta: { projectId: item.id }
+        meta: { projectId: item.id, projectSnapshot: item }
       }
     })
   }
@@ -786,13 +829,17 @@ async function renderMap() {
     : viewLevel.value === 'city'
       ? buildCityScene(
           cityGeoJson,
-          await loadMapGeoJson('county', cityScope)
+          await getScopedCountyGeoJson(cityGeoJson, cityScope)
         )
-      : buildCountyScene(
-          cityGeoJson,
-          await loadMapGeoJson('district', await resolveDistrictScopeByName(selectedDistrict.value, cityScope)),
-          await loadMapGeoJson('province', { provinceName: ROOT_PROVINCE_NAME })
-        )
+      : await (async () => {
+          const countyGeoJsonPromise = loadMapGeoJson('county', cityScope)
+          const [provinceGeoJson, districtScope] = await Promise.all([
+            loadMapGeoJson('province', { provinceName: ROOT_PROVINCE_NAME }),
+            resolveDistrictScopeByName(selectedDistrict.value, cityScope, await countyGeoJsonPromise)
+          ])
+          const districtGeoJson = await loadMapGeoJson('district', districtScope)
+          return buildCountyScene(cityGeoJson, districtGeoJson, provinceGeoJson)
+        })()
 
   await ensureMapRegistered(scene.mapKey, scene.geoJson)
 
@@ -800,7 +847,8 @@ async function renderMap() {
   const isProvinceLevel = viewLevel.value === 'province'
   const showProjectLabels = viewLevel.value === 'county' && scene.projectScatterData.length > 0 && scene.projectScatterData.length <= 10
   const showBubbleLabels = isProvinceLevel || scene.countBubbleData.length <= 18
-  const enableAnimation = scene.projectScatterData.length <= 80
+  const shouldUseEffectScatter = scene.projectScatterData.length <= 60 && scene.countBubbleData.length <= 24
+  const enableAnimation = shouldUseEffectScatter && scene.projectScatterData.length <= 80
 
   chart.setOption({
     animation: enableAnimation,
@@ -850,16 +898,18 @@ async function renderMap() {
         itemStyle: { borderColor: '#93c5fd' }
       },
       {
-        name: '区域项目数',
-        type: 'effectScatter',
+        name: '区域项目数量',
+        type: shouldUseEffectScatter ? 'effectScatter' : 'scatter',
         coordinateSystem: 'geo',
         data: scene.countBubbleData,
         symbolSize: (val) => Math.max(10, Math.min(24, 10 + Number(val[2] || 0) * 1.4)),
-        showEffectOn: 'render',
-        rippleEffect: {
-          brushType: 'stroke',
-          scale: 2.6
-        },
+        showEffectOn: shouldUseEffectScatter ? 'render' : 'emphasis',
+        rippleEffect: shouldUseEffectScatter
+          ? {
+              brushType: 'stroke',
+              scale: 2.6
+            }
+          : undefined,
         itemStyle: {
           color: '#0f766e',
           shadowBlur: 10,
@@ -879,15 +929,17 @@ async function renderMap() {
       },
       {
         name: '项目点位',
-        type: 'effectScatter',
+        type: shouldUseEffectScatter ? 'effectScatter' : 'scatter',
         coordinateSystem: 'geo',
         data: scene.projectScatterData,
         symbolSize: 12,
-        showEffectOn: 'render',
-        rippleEffect: {
-          brushType: 'stroke',
-          scale: 3.2
-        },
+        showEffectOn: shouldUseEffectScatter ? 'render' : 'emphasis',
+        rippleEffect: shouldUseEffectScatter
+          ? {
+              brushType: 'stroke',
+              scale: 3.2
+            }
+          : undefined,
         itemStyle: {
           color: '#ef4444',
           shadowBlur: 14,
@@ -909,6 +961,15 @@ async function renderMap() {
   }, true)
 
   const durationMs = Math.round(nowMs() - renderStartAt)
+  reportPerfAction('dashboard_render_map', {
+    durationMs,
+    level: viewLevel.value,
+    regionCount: scene.regionSeriesData.length,
+    projectCount: scene.projectScatterData.length
+  }, {
+    thresholdMs: resolvePerfThresholdMs(1),
+    normalLevel: 'info'
+  })
   if (durationMs >= appConfig.slowRequestThreshold) {
     logger.warn('首页地图渲染耗时偏高', {
       durationMs,
@@ -926,14 +987,40 @@ async function renderMap() {
   }
 }
 
-async function syncView(force = false) {
+async function syncView(force = false, context = {}) {
+  const syncStartAt = nowMs()
   mapErrorMessage.value = ''
-  await Promise.all([
-    hydrateCurrentView(force),
-    prepareCurrentLevelResources()
-  ])
+
+  void warmupCurrentLevelResources().catch((error) => {
+    logger.debug('当前层级资源预热已跳过', { message: error?.message || '' })
+  })
+
+  const hydrateStartAt = nowMs()
+  await hydrateCurrentView(force)
+  context.hydrateMs = resolveDurationMs(hydrateStartAt)
+
+  const renderStartAt = nowMs()
   await renderMap()
+  context.renderMs = resolveDurationMs(renderStartAt)
+  context.prepareResourcesMs = 0
+  context.durationMs = resolveDurationMs(syncStartAt)
+
+  reportPerfAction('dashboard_sync_view', {
+    force,
+    level: viewLevel.value,
+    trigger: context.trigger || 'system',
+    hydrateMs: context.hydrateMs,
+    prepareResourcesMs: context.prepareResourcesMs,
+    renderMs: context.renderMs,
+    durationMs: context.durationMs,
+    warmupInBackground: true
+  }, {
+    thresholdMs: resolvePerfThresholdMs(1.4),
+    normalLevel: 'info'
+  })
+
   warmupNextLevelResources()
+  return context
 }
 
 async function withBusyState(type, runner) {
@@ -954,59 +1041,140 @@ async function withBusyState(type, runner) {
 }
 
 async function reloadCurrentView() {
+  const refreshStartAt = nowMs()
+  const syncMetrics = {}
   await withBusyState('refresh', async () => {
-    await syncView(true)
+    await syncView(true, syncMetrics)
+  })
+  reportPerfDuration('dashboard_manual_refresh', refreshStartAt, {
+    level: viewLevel.value,
+    success: !mapErrorMessage.value,
+    syncMs: syncMetrics.durationMs || 0
+  }, {
+    thresholdMs: resolvePerfThresholdMs(1.4),
+    normalLevel: 'info'
   })
 }
 
-async function openProjectDetail(projectId) {
+async function openProjectDetail(projectId, context = {}, fallbackData = null) {
   if (!projectId) return
+  const requestSeq = ++detailDialogRequestSeq.value
+  const detailStartAt = nowMs()
   detailDialog.visible = true
   detailDialog.loading = true
+  detailDialog.data = fallbackData || detailDialog.data || {}
   try {
     const res = await getProjectDetail(projectId)
-    detailDialog.data = res.data || {}
+    if (requestSeq !== detailDialogRequestSeq.value || !detailDialog.visible) {
+      return
+    }
+    detailDialog.data = res.data || fallbackData || {}
+    reportPerfDuration('dashboard_project_detail_open', detailStartAt, {
+      projectId,
+      source: context.source || 'unknown',
+      success: true
+    }, {
+      thresholdMs: resolvePerfThresholdMs(1),
+      normalLevel: 'info'
+    })
   } catch (error) {
     detailDialog.visible = false
     showError('加载项目详情失败')
+    reportPerfDuration('dashboard_project_detail_open', detailStartAt, {
+      projectId,
+      source: context.source || 'unknown',
+      success: false,
+      errorMessage: error?.message || ''
+    }, {
+      thresholdMs: resolvePerfThresholdMs(1),
+      normalLevel: 'info'
+    })
   } finally {
-    detailDialog.loading = false
+    if (requestSeq === detailDialogRequestSeq.value) {
+      detailDialog.loading = false
+    }
   }
 }
 
-async function drillToCity(cityName) {
+async function drillToCity(cityName, context = {}) {
+  const drillStartAt = nowMs()
   selectedCity.value = cityName
   selectedDistrict.value = ''
   viewLevel.value = 'city'
   await withBusyState('switch', async () => {
-    await syncView(false)
+    await syncView(false, {
+      trigger: context.trigger || 'map'
+    })
+  })
+  reportPerfDuration('dashboard_map_drilldown', drillStartAt, {
+    fromLevel: 'province',
+    toLevel: 'city',
+    city: cityName,
+    trigger: context.trigger || 'map',
+    success: !mapErrorMessage.value
+  }, {
+    thresholdMs: resolvePerfThresholdMs(1.5),
+    normalLevel: 'info'
   })
 }
 
-async function drillToCounty(districtName) {
+async function drillToCounty(districtName, context = {}) {
+  const drillStartAt = nowMs()
   selectedDistrict.value = districtName
   viewLevel.value = 'county'
   await withBusyState('switch', async () => {
-    await syncView(false)
+    await syncView(false, {
+      trigger: context.trigger || 'map'
+    })
+  })
+  reportPerfDuration('dashboard_map_drilldown', drillStartAt, {
+    fromLevel: 'city',
+    toLevel: 'county',
+    city: selectedCity.value,
+    district: districtName,
+    trigger: context.trigger || 'map',
+    success: !mapErrorMessage.value
+  }, {
+    thresholdMs: resolvePerfThresholdMs(1.5),
+    normalLevel: 'info'
   })
 }
 
 async function resetToProvince() {
   if (viewLevel.value === 'province') return
+  const switchStartAt = nowMs()
   viewLevel.value = 'province'
   selectedCity.value = ''
   selectedDistrict.value = ''
   await withBusyState('switch', async () => {
-    await syncView(false)
+    await syncView(false, { trigger: 'breadcrumb' })
+  })
+  reportPerfDuration('dashboard_level_reset', switchStartAt, {
+    toLevel: 'province',
+    trigger: 'breadcrumb',
+    success: !mapErrorMessage.value
+  }, {
+    thresholdMs: resolvePerfThresholdMs(1.4),
+    normalLevel: 'info'
   })
 }
 
 async function backToCity() {
   if (!selectedCity.value || viewLevel.value === 'city') return
+  const switchStartAt = nowMs()
   viewLevel.value = 'city'
   selectedDistrict.value = ''
   await withBusyState('switch', async () => {
-    await syncView(false)
+    await syncView(false, { trigger: 'breadcrumb' })
+  })
+  reportPerfDuration('dashboard_level_back', switchStartAt, {
+    toLevel: 'city',
+    city: selectedCity.value,
+    trigger: 'breadcrumb',
+    success: !mapErrorMessage.value
+  }, {
+    thresholdMs: resolvePerfThresholdMs(1.4),
+    normalLevel: 'info'
   })
 }
 
@@ -1020,15 +1188,15 @@ async function goBack() {
 
 async function handlePanelItemClick(item) {
   if (item.type === 'project') {
-    await openProjectDetail(item.projectId)
+    await openProjectDetail(item.projectId, { source: 'panel' }, item.project)
     return
   }
   if (viewLevel.value === 'province') {
-    await drillToCity(item.regionName)
+    await drillToCity(item.regionName, { trigger: 'panel' })
     return
   }
   if (viewLevel.value === 'city') {
-    await drillToCounty(item.regionName)
+    await drillToCounty(item.regionName, { trigger: 'panel' })
   }
 }
 
@@ -1045,7 +1213,7 @@ function bindChartEvents() {
   chart.on(MAP_CLICK_EVENT, async (params) => {
     const projectId = params?.data?.meta?.projectId
     if (projectId) {
-      await openProjectDetail(projectId)
+      await openProjectDetail(projectId, { source: 'map' }, params?.data?.meta?.projectSnapshot || null)
       return
     }
 
@@ -1053,11 +1221,11 @@ function bindChartEvents() {
     if (!regionName) return
 
     if (viewLevel.value === 'province') {
-      await drillToCity(regionName)
+      await drillToCity(regionName, { trigger: 'map' })
       return
     }
     if (viewLevel.value === 'city') {
-      await drillToCounty(regionName)
+      await drillToCounty(regionName, { trigger: 'map' })
     }
   })
 }
@@ -1075,6 +1243,7 @@ function ensureResizeListener(active) {
 }
 
 async function setupChart() {
+  const setupStartAt = nowMs()
   await nextTick()
   await new Promise((resolve) => requestAnimationFrame(resolve))
 
@@ -1083,21 +1252,23 @@ async function setupChart() {
     throw new Error('地图容器初始化失败')
   }
 
-  const runtimePromise = ensureEchartsReady()
-  const dataPromise = Promise.all([
-    hydrateCurrentView(false),
-    prepareCurrentLevelResources()
-  ])
-
-  const runtime = await runtimePromise
+  const runtime = await ensureEchartsReady()
   if (!chart) {
     chart = runtime.init(container, null, { renderer: 'canvas', useDirtyRect: true })
     bindChartEvents()
   }
 
-  await dataPromise
+  await hydrateCurrentView(false)
+  requestIdleTask(() => warmupCurrentLevelResources())
   await renderMap()
   warmupNextLevelResources()
+  reportPerfDuration('dashboard_chart_setup', setupStartAt, {
+    level: viewLevel.value,
+    success: true
+  }, {
+    thresholdMs: resolvePerfThresholdMs(1.6),
+    normalLevel: 'info'
+  })
 }
 
 onMounted(async () => {

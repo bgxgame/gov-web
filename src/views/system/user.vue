@@ -131,6 +131,7 @@ import {
 } from '../../api/system'
 import { showSuccess, showWarning } from '../../utils/feedback'
 import { useActivatedRefresh } from '../../utils/activated-refresh'
+import { nowMs, reportPerfDuration } from '../../utils/perf-metrics'
 import { createEmptyUserForm, flattenDeptOptions, normalizeUserForm } from '../../utils/system-models'
 
 // 用户管理页：负责用户分页、编辑、状态切换和角色配置。
@@ -250,21 +251,68 @@ function handleReset() {
 
 // 打开新增用户弹窗。
 async function openCreateDialog() {
+  const dialogStartAt = nowMs()
+  let success = false
+  let errorMessage = ''
   dialog.mode = 'create'
   dialog.form = createEmptyForm()
   dialog.visible = true
-  await ensureDialogOptionsLoaded()
+  try {
+    await ensureDialogOptionsLoaded()
+    success = true
+  } catch (error) {
+    errorMessage = error?.message || ''
+    throw error
+  } finally {
+    reportPerfDuration('system_user_edit_dialog_open', dialogStartAt, {
+      mode: 'create',
+      success,
+      errorMessage
+    }, {
+      normalLevel: 'info'
+    })
+  }
 }
 
 // 打开编辑弹窗，并在管理员场景下回填角色。
 async function openEditDialog(row) {
+  const dialogStartAt = nowMs()
+  let optionsMs = 0
+  let roleMs = 0
+  let success = true
+  let errorMessage = ''
   dialog.mode = 'edit'
   dialog.form = normalizeUserForm(row)
   dialog.visible = true
-  await ensureDialogOptionsLoaded()
-  if (isAdmin) {
-    const roleRes = await getUserRoles(row.id)
-    dialog.form.roleIds = roleRes.data || []
+  try {
+    const optionsStartAt = nowMs()
+    const optionsPromise = ensureDialogOptionsLoaded()
+    if (isAdmin) {
+      const roleStartAt = nowMs()
+      const rolePromise = getUserRoles(row.id)
+      const [, roleRes] = await Promise.all([optionsPromise, rolePromise])
+      optionsMs = Math.round(nowMs() - optionsStartAt)
+      roleMs = Math.round(nowMs() - roleStartAt)
+      dialog.form.roleIds = roleRes.data || []
+    } else {
+      await optionsPromise
+      optionsMs = Math.round(nowMs() - optionsStartAt)
+    }
+  } catch (error) {
+    success = false
+    errorMessage = error?.message || ''
+    throw error
+  } finally {
+    reportPerfDuration('system_user_edit_dialog_open', dialogStartAt, {
+      mode: 'edit',
+      userId: row?.id,
+      success,
+      optionsMs,
+      roleMs,
+      errorMessage
+    }, {
+      normalLevel: 'info'
+    })
   }
 }
 
@@ -300,7 +348,8 @@ async function handleStatusChange(row, enabled) {
   try {
     await setUserEnabled(row.id, enabled)
     showSuccess('状态更新成功')
-    await fetchTableData({ silent: true })
+    row.status = enabled ? 1 : 0
+    markRefreshed()
   } finally {
     statusLoadingUserId.value = null
   }
