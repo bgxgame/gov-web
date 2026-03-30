@@ -11,7 +11,31 @@
           </el-select>
         </el-form-item>
         <el-form-item label="省份">
-          <el-input v-model="queryForm.province" placeholder="如：陕西省" clearable />
+          <el-select v-model="queryForm.province" placeholder="全部省份" clearable style="width: 160px">
+            <el-option v-for="item in provinceOptions" :key="item.value" :label="item.label" :value="item.value" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="城市">
+          <el-select
+            v-model="queryForm.city"
+            placeholder="全部城市"
+            clearable
+            style="width: 160px"
+            :disabled="!queryForm.province"
+          >
+            <el-option v-for="item in queryCityOptions" :key="item.value" :label="item.label" :value="item.value" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="区县">
+          <el-select
+            v-model="queryForm.district"
+            placeholder="全部区县"
+            clearable
+            style="width: 160px"
+            :disabled="!queryForm.city"
+          >
+            <el-option v-for="item in queryDistrictOptions" :key="item.value" :label="item.label" :value="item.value" />
+          </el-select>
         </el-form-item>
         <el-form-item>
           <el-button type="primary" native-type="submit" :loading="tableLoading" @click="handleQuery">查询</el-button>
@@ -101,17 +125,33 @@
           </el-col>
           <el-col :span="8">
             <el-form-item label="省份">
-              <el-input v-model="editDialog.form.province" />
+              <el-select v-model="editDialog.form.province" placeholder="请选择省份" style="width: 100%">
+                <el-option v-for="item in provinceOptions" :key="item.value" :label="item.label" :value="item.value" />
+              </el-select>
             </el-form-item>
           </el-col>
           <el-col :span="8">
             <el-form-item label="城市">
-              <el-input v-model="editDialog.form.city" />
+              <el-select
+                v-model="editDialog.form.city"
+                placeholder="请选择城市"
+                style="width: 100%"
+                :disabled="!editDialog.form.province"
+              >
+                <el-option v-for="item in editCityOptions" :key="item.value" :label="item.label" :value="item.value" />
+              </el-select>
             </el-form-item>
           </el-col>
           <el-col :span="8">
             <el-form-item label="区县">
-              <el-input v-model="editDialog.form.district" />
+              <el-select
+                v-model="editDialog.form.district"
+                placeholder="请选择区县"
+                style="width: 100%"
+                :disabled="!editDialog.form.city"
+              >
+                <el-option v-for="item in editDistrictOptions" :key="item.value" :label="item.label" :value="item.value" />
+              </el-select>
             </el-form-item>
           </el-col>
           <el-col :span="24">
@@ -189,13 +229,14 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { getUserSimple } from '../../api/system'
 import { deleteProject, fetchProjectPageByForm, getProjectDetail, saveProjectForm, submitProjectById } from '../../api/project'
 import { useSessionStore } from '../../stores/session'
 import { useActivatedRefresh } from '../../utils/activated-refresh'
 import { confirmAction, handleActionError, showError, showSuccess, showWarning } from '../../utils/feedback'
 import { createEmptyProjectForm, normalizeProjectForm } from '../../utils/project-models'
+import { PROVINCE_OPTIONS, appendMissingOption, getCityOptions, getDistrictOptions, hasCity, hasDistrict } from '../../utils/region-options'
 
 // 项目管理页：负责项目分页、编辑、详情、删除和提交审批。
 const statusOptions = [
@@ -208,7 +249,9 @@ const statusOptions = [
 const queryForm = reactive({
   projectName: '',
   status: undefined,
-  province: ''
+  province: '',
+  city: '',
+  district: ''
 })
 
 const pagination = reactive({
@@ -246,6 +289,13 @@ const rowActionLoading = reactive({
 })
 
 const CONTACT_PHONE_REGEX = /^[0-9-]{7,20}$/
+const provinceOptions = PROVINCE_OPTIONS
+const queryCityOptions = computed(() => getCityOptions(queryForm.province))
+const queryDistrictOptions = computed(() => getDistrictOptions(queryForm.province, queryForm.city))
+const editCityOptions = computed(() => appendMissingOption(getCityOptions(editDialog.form.province), editDialog.form.city))
+const editDistrictOptions = computed(() =>
+  appendMissingOption(getDistrictOptions(editDialog.form.province, editDialog.form.city), editDialog.form.district)
+)
 
 // 创建页面本地使用的默认项目表单。
 function createEmptyForm() {
@@ -256,6 +306,56 @@ function createEmptyForm() {
 function normalizeProject(project) {
   return normalizeProjectForm(project, userOptions.value)
 }
+
+watch(
+  () => queryForm.province,
+  (value, previousValue) => {
+    if (value === previousValue) return
+    if (!hasCity(value, queryForm.city)) {
+      queryForm.city = ''
+      queryForm.district = ''
+      return
+    }
+    if (!hasDistrict(value, queryForm.city, queryForm.district)) {
+      queryForm.district = ''
+    }
+  }
+)
+
+watch(
+  () => queryForm.city,
+  (value, previousValue) => {
+    if (value === previousValue) return
+    if (!hasDistrict(queryForm.province, value, queryForm.district)) {
+      queryForm.district = ''
+    }
+  }
+)
+
+watch(
+  () => editDialog.form.province,
+  (value, previousValue) => {
+    if (value === previousValue) return
+    if (!hasCity(value, editDialog.form.city)) {
+      editDialog.form.city = ''
+      editDialog.form.district = ''
+      return
+    }
+    if (!hasDistrict(value, editDialog.form.city, editDialog.form.district)) {
+      editDialog.form.district = ''
+    }
+  }
+)
+
+watch(
+  () => editDialog.form.city,
+  (value, previousValue) => {
+    if (value === previousValue) return
+    if (!hasDistrict(editDialog.form.province, value, editDialog.form.district)) {
+      editDialog.form.district = ''
+    }
+  }
+)
 
 // 根据状态值返回页面展示文案。
 function statusLabel(status) {
@@ -353,6 +453,8 @@ function handleReset() {
   queryForm.projectName = ''
   queryForm.status = undefined
   queryForm.province = ''
+  queryForm.city = ''
+  queryForm.district = ''
   pagination.pageNum = 1
   fetchTableData()
 }
@@ -413,6 +515,10 @@ function handleLeaderChange(userId) {
 async function handleSave() {
   if (!editDialog.form.projectName) {
     showWarning('项目名称不能为空')
+    return
+  }
+  if (!editDialog.form.province || !editDialog.form.city || !editDialog.form.district) {
+    showWarning('请完整选择省、市、区县')
     return
   }
   const leaderPhone = String(editDialog.form.leaderPhone || '').trim()

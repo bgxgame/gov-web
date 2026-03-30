@@ -92,7 +92,7 @@ describe('project-models', () => {
   it('should build page and map query params with trimmed values', () => {
     expect(
       buildProjectPageParams(
-        { projectName: '  项目A ', status: 1, province: ' 陕西 ' },
+        { projectName: '  项目A ', status: 1, province: ' 陕西 ', city: ' 西安 ', district: ' 雁塔区 ' },
         { pageNum: 2, pageSize: 20 }
       )
     ).toEqual({
@@ -100,7 +100,9 @@ describe('project-models', () => {
       pageSize: 20,
       projectName: '项目A',
       status: 1,
-      province: '陕西'
+      province: '陕西',
+      city: '西安',
+      district: '雁塔区'
     })
 
     expect(buildProjectMapParams({ province: ' 陕西 ', city: '', district: ' 雁塔区 ' })).toEqual({

@@ -118,9 +118,9 @@ export function normalizeProjectForm(project, userOptions = []) {
  * 构建 `/project/page` 所需的查询参数。
  * 返回字段与后端分页筛选参数保持一致。
  *
- * @param {{ projectName?: string, status?: number, province?: string }} queryForm
+ * @param {{ projectName?: string, status?: number, province?: string, city?: string, district?: string }} queryForm
  * @param {{ pageNum: number, pageSize: number }} pagination
- * @returns {{ pageNum: number, pageSize: number, projectName?: string, status?: number, province?: string }}
+ * @returns {{ pageNum: number, pageSize: number, projectName?: string, status?: number, province?: string, city?: string, district?: string }}
  */
 export function buildProjectPageParams(queryForm, pagination) {
   return {
@@ -128,7 +128,9 @@ export function buildProjectPageParams(queryForm, pagination) {
     pageSize: pagination.pageSize,
     projectName: normalizeOptionalText(queryForm.projectName),
     status: queryForm.status,
-    province: normalizeOptionalText(queryForm.province)
+    province: normalizeOptionalText(queryForm.province),
+    city: normalizeOptionalText(queryForm.city),
+    district: normalizeOptionalText(queryForm.district)
   }
 }
 
