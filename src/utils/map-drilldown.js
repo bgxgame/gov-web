@@ -166,7 +166,9 @@ export function resolveMapResourceCacheKey(level, scope = {}) {
     String(scope.provinceName || '').trim(),
     String(scope.provinceAdcode || '').trim(),
     String(scope.cityName || '').trim(),
-    String(scope.cityAdcode || '').trim()
+    String(scope.cityAdcode || '').trim(),
+    String(scope.districtName || '').trim(),
+    String(scope.districtAdcode || '').trim()
   ].join('|')
 }
 
@@ -233,6 +235,9 @@ export function resolveManifestMapResource(level, scope = {}, manifest = null) {
   }
 
   const lookupKeys = dedupeTruthy([
+    scope.districtAdcode,
+    scope.districtName,
+    normalizeRegionName(scope.districtName),
     scope.cityAdcode,
     scope.cityName,
     normalizeRegionName(scope.cityName),

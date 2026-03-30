@@ -106,6 +106,9 @@ describe('map-drilldown utils', () => {
       },
       county: {
         '610100': '/map-data/split/county-groups/610100.geojson'
+      },
+      district: {
+        '610113': '/map-data/split/counties/610113.geojson'
       }
     }
 
@@ -118,8 +121,17 @@ describe('map-drilldown utils', () => {
     expect(resolveManifestMapResource('county', { cityAdcode: '610100', cityName: '西安市' }, manifest)).toEqual([
       '/map-data/split/county-groups/610100.geojson'
     ])
-    expect(resolveMapResourceCacheKey('county', { provinceName: '陕西省', cityName: '西安市', cityAdcode: '610100' })).toBe(
-      'county|陕西省||西安市|610100'
+    expect(resolveManifestMapResource('district', { districtAdcode: '610113', districtName: '雁塔区' }, manifest)).toEqual([
+      '/map-data/split/counties/610113.geojson'
+    ])
+    expect(resolveMapResourceCacheKey('district', {
+      provinceName: '陕西省',
+      cityName: '西安市',
+      cityAdcode: '610100',
+      districtName: '雁塔区',
+      districtAdcode: '610113'
+    })).toBe(
+      'district|陕西省||西安市|610100|雁塔区|610113'
     )
   })
 })

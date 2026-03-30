@@ -642,5 +642,6 @@
       "name": "子长市",
       "path": "/map-data/split/counties/610681.geojson"
     }
-  ]
+  ],
+  "unassignedCounties": []
 }

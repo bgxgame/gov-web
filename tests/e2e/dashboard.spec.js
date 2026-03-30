@@ -154,7 +154,11 @@ test('首页地图应支持省市县下钻并展示项目详情', async ({ page 
             陕西省: '/map-data/split/city-groups/610000.geojson',
             default: '/map-data/split/city-groups/610000.geojson'
           },
-          county: { '610100': '/map-data/split/county-groups/610100.geojson' }
+          county: { '610100': '/map-data/split/county-groups/610100.geojson' },
+          district: {
+            '610113': '/map-data/split/counties/610113.geojson',
+            '610116': '/map-data/split/counties/610116.geojson'
+          }
         })
       })
       return
@@ -183,6 +187,18 @@ test('首页地图应支持省市县下钻并展示项目详情', async ({ page 
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify(countyGeoJson)
+      })
+      return
+    }
+
+    if (requestUrl.endsWith('/split/counties/610113.geojson')) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          type: 'FeatureCollection',
+          features: [countyGeoJson.features[0]]
+        })
       })
       return
     }

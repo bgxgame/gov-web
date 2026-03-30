@@ -220,11 +220,23 @@ describe('dashboard view', () => {
             陕西省: '/map-data/split/city-groups/610000.geojson',
             default: '/map-data/split/city-groups/610000.geojson'
           },
-          county: { '610100': '/map-data/split/county-groups/610100.geojson' }
+          county: { '610100': '/map-data/split/county-groups/610100.geojson' },
+          district: {
+            '610113': '/map-data/split/counties/610113.geojson',
+            '610116': '/map-data/split/counties/610116.geojson'
+          }
         },
         '/map-data/split/provinces/610000.geojson': provinceGeoJson,
         '/map-data/split/city-groups/610000.geojson': cityGeoJson,
         '/map-data/split/county-groups/610100.geojson': countyGeoJson,
+        '/map-data/split/counties/610113.geojson': {
+          type: 'FeatureCollection',
+          features: [countyGeoJson.features[0]]
+        },
+        '/map-data/split/counties/610116.geojson': {
+          type: 'FeatureCollection',
+          features: [countyGeoJson.features[1]]
+        },
         '/map-data/province.geojson': provinceGeoJson,
         '/map-data/city.geojson': cityGeoJson,
         '/map-data/county.geojson': countyGeoJson
@@ -279,6 +291,7 @@ describe('dashboard view', () => {
 
     expect(fetchProjectMapListByFilters).toHaveBeenCalledTimes(1)
     expect(fetchProjectMapListByFilters).toHaveBeenCalledWith({ province: '陕西省', city: '西安市', district: '雁塔区' })
+    expect(fetch).toHaveBeenCalledWith('/map-data/split/counties/610113.geojson')
     expect(setOption.mock.calls.length).toBeGreaterThan(renderCountBeforeCountyClick)
     expect(wrapper.text()).toContain('雁塔区 项目清单')
     expect(wrapper.find('[data-role="insight-list"]').text()).toContain('雁塔区应急工程')

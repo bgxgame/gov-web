@@ -144,6 +144,7 @@ const ROOT_MAP_KEY = 'dashboard-province-map'
 const MAP_CLICK_EVENT = 'click'
 const DEFAULT_POINT = [108.95, 34.27]
 const COUNTY_GROUP_WARMUP_LIMIT = 3
+const DISTRICT_FILE_WARMUP_LIMIT = 4
 
 const mapContainerRef = ref(null)
 const initializing = ref(false)
@@ -565,6 +566,23 @@ async function resolveCityScopeByName(cityName, cityGeoJson = null) {
   }
 }
 
+async function resolveDistrictScopeByName(districtName, cityScope = null, countyGeoJson = null) {
+  const normalizedDistrictName = String(districtName || '').trim()
+  if (!normalizedDistrictName) return null
+
+  const resolvedCityScope = cityScope || await resolveSelectedCityScope()
+  if (!resolvedCityScope) return null
+
+  const currentCountyGeoJson = countyGeoJson || await loadMapGeoJson('county', resolvedCityScope)
+  const districtFeature = findFeatureByName(currentCountyGeoJson, normalizedDistrictName)
+
+  return {
+    ...resolvedCityScope,
+    districtName: normalizedDistrictName,
+    districtAdcode: getFeatureAdcode(districtFeature)
+  }
+}
+
 async function warmupTopCountyGroupResources(limit = COUNTY_GROUP_WARMUP_LIMIT) {
   if (viewLevel.value !== 'province' || provinceSummaryRows.value.length === 0) return
 
@@ -583,6 +601,27 @@ async function warmupTopCountyGroupResources(limit = COUNTY_GROUP_WARMUP_LIMIT) 
   await Promise.all(tasks)
 }
 
+async function warmupTopDistrictResources(limit = DISTRICT_FILE_WARMUP_LIMIT) {
+  if (viewLevel.value !== 'city' || districtSummaryRows.value.length === 0) return
+
+  const cityScope = await resolveSelectedCityScope()
+  if (!cityScope?.cityAdcode) return
+
+  const countyGeoJson = await loadMapGeoJson('county', cityScope)
+  const topDistricts = districtSummaryRows.value
+    .slice()
+    .sort((a, b) => Number(b.projectCount || 0) - Number(a.projectCount || 0))
+    .slice(0, limit)
+
+  const tasks = topDistricts.map(async (item) => {
+    const scope = await resolveDistrictScopeByName(item.regionName, cityScope, countyGeoJson)
+    if (!scope?.districtAdcode) return null
+    return loadMapGeoJson('district', scope)
+  })
+
+  await Promise.all(tasks)
+}
+
 async function prepareCurrentLevelResources() {
   const tasks = [ensureEchartsReady(), loadMapGeoJson('city', { provinceName: ROOT_PROVINCE_NAME })]
   if (viewLevel.value !== 'province') {
@@ -592,6 +631,12 @@ async function prepareCurrentLevelResources() {
   }
   if (viewLevel.value === 'county') {
     tasks.push(loadMapGeoJson('province', { provinceName: ROOT_PROVINCE_NAME }))
+    tasks.push(
+      resolveDistrictScopeByName(selectedDistrict.value).then((scope) => {
+        if (!scope?.districtAdcode) return null
+        return loadMapGeoJson('district', scope)
+      })
+    )
   }
   await Promise.all(tasks)
 }
@@ -612,6 +657,7 @@ function warmupNextLevelResources() {
         loadMapGeoJson('county', countyScope),
         loadMapGeoJson('province', { provinceName: ROOT_PROVINCE_NAME })
       ])
+      await warmupTopDistrictResources()
     }
   })
 }
@@ -666,14 +712,28 @@ function buildCityScene(cityGeoJson, countyGeoJson) {
   }
 }
 
-function buildCountyScene(cityGeoJson, countyGeoJson, provinceGeoJson) {
-  const cityScene = buildCityScene(cityGeoJson, countyGeoJson)
-  const districtFeature = findFeatureByName(cityScene.geoJson, selectedDistrict.value)
+function buildCountyScene(cityGeoJson, districtGeoJson, provinceGeoJson) {
+  const features = districtGeoJson.features || []
+  const districtFeature = features[0] || findFeatureByName(districtGeoJson, selectedDistrict.value)
+  if (!districtFeature) {
+    throw new Error(`${selectedDistrict.value || '当前区县'}缺少区县边界资源`)
+  }
+
   const cityFeature = findFeatureByName(cityGeoJson, selectedCity.value)
   const provinceFeature = (provinceGeoJson.features || [])[0] || null
+  const districtAdcode = getFeatureAdcode(districtFeature) || selectedDistrict.value
 
   return {
-    ...cityScene,
+    mapKey: `dashboard-district-${districtAdcode}`,
+    geoJson: {
+      type: 'FeatureCollection',
+      features: [districtFeature]
+    },
+    regionSeriesData: [{
+      name: getFeatureName(districtFeature),
+      value: countyProjectRows.value.length
+    }],
+    countBubbleData: [],
     projectScatterData: countyProjectRows.value.map((item) => {
       const point = resolveProjectPoint(item, [districtFeature, cityFeature, provinceFeature], DEFAULT_POINT)
       return {
@@ -696,7 +756,11 @@ function buildTooltipFormatter() {
       `
     }
     const count = params.data?.value ?? params.value ?? 0
-    const hint = viewLevel.value === 'province' ? '点击进入市级下钻' : '点击进入县级项目'
+    const hint = viewLevel.value === 'province'
+      ? '点击进入市级下钻'
+      : viewLevel.value === 'city'
+        ? '点击进入区县项目'
+        : '点击项目查看详情'
     return `
       <div class="map-tooltip">
         <div class="map-tooltip__title">${params.name}</div>
@@ -714,16 +778,19 @@ async function renderMap() {
   const cityGeoJson = await loadMapGeoJson('city', { provinceName: ROOT_PROVINCE_NAME })
   const cityFeature = selectedCity.value ? findFeatureByName(cityGeoJson, selectedCity.value) : null
   const cityAdcode = getFeatureAdcode(cityFeature)
+  const cityScope = cityFeature
+    ? { provinceName: ROOT_PROVINCE_NAME, cityName: selectedCity.value, cityAdcode }
+    : { provinceName: ROOT_PROVINCE_NAME }
   const scene = viewLevel.value === 'province'
     ? buildProvinceScene(cityGeoJson)
     : viewLevel.value === 'city'
       ? buildCityScene(
           cityGeoJson,
-          await loadMapGeoJson('county', { provinceName: ROOT_PROVINCE_NAME, cityName: selectedCity.value, cityAdcode })
+          await loadMapGeoJson('county', cityScope)
         )
       : buildCountyScene(
           cityGeoJson,
-          await loadMapGeoJson('county', { provinceName: ROOT_PROVINCE_NAME, cityName: selectedCity.value, cityAdcode }),
+          await loadMapGeoJson('district', await resolveDistrictScopeByName(selectedDistrict.value, cityScope)),
           await loadMapGeoJson('province', { provinceName: ROOT_PROVINCE_NAME })
         )
 

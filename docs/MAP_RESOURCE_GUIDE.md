@@ -57,6 +57,16 @@
 npm run map:split
 ```
 
+如果你更新了地图源，希望“一次完成切分 + 校验”，直接执行：
+
+```bash
+npm run map:refresh
+```
+
+每次执行后还会自动导出一份中文人工核对表：
+
+- `public/map-data/split/city-county-checklist.md`
+
 脚本会自动生成：
 - `public/map-data/split/provinces/<省adcode>.geojson`
 - `public/map-data/split/city-groups/<省adcode>.geojson`
@@ -71,6 +81,18 @@ npm run map:split
 - `county-groups` 目录最适合当前首页地图下钻直接使用
 - `counties` 目录适合后续继续做更细下钻或单区县专题页
 - `cities` 目录保留为独立城市边界资产，便于后续扩展
+
+校验命令：
+
+```bash
+npm run map:validate
+```
+
+建议日常直接使用：
+
+```bash
+npm run map:refresh
+```
 
 ## 5. 维护建议
 - 建议统一使用 UTF-8 编码
