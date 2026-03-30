@@ -1,3 +1,10 @@
+const slowRequestThreshold = Number(import.meta.env.VITE_APP_SLOW_REQUEST_MS || 800)
+const slowRouteThreshold = Number(import.meta.env.VITE_APP_SLOW_ROUTE_MS || 800)
+const slowInitialRouteThreshold = Number(
+  import.meta.env.VITE_APP_SLOW_INITIAL_ROUTE_MS ||
+    (import.meta.env.DEV ? Math.max(1600, slowRouteThreshold * 2) : Math.max(1200, slowRouteThreshold + 400))
+)
+
 /**
  * 职责：集中管理前端运行时配置。
  * 为什么存在：避免页面和工具层散落硬编码，方便运维按环境覆盖。
@@ -9,8 +16,9 @@ export const appConfig = {
   apiBaseUrl: import.meta.env.VITE_API_BASE_URL || '/api',
   requestTimeout: Number(import.meta.env.VITE_API_TIMEOUT || 10000),
   logLevel: String(import.meta.env.VITE_APP_LOG_LEVEL || 'warn').toLowerCase(),
-  slowRequestThreshold: Number(import.meta.env.VITE_APP_SLOW_REQUEST_MS || 800),
-  slowRouteThreshold: Number(import.meta.env.VITE_APP_SLOW_ROUTE_MS || 800),
+  slowRequestThreshold,
+  slowRouteThreshold,
+  slowInitialRouteThreshold,
   runtimeLogBufferSize: Number(import.meta.env.VITE_APP_RUNTIME_LOG_BUFFER_SIZE || 200),
   frontendMonitorEnabled: String(import.meta.env.VITE_APP_FRONTEND_MONITOR_ENABLED || 'true').toLowerCase() === 'true',
   frontendMonitorFlushIntervalMs: Number(import.meta.env.VITE_APP_FRONTEND_MONITOR_FLUSH_MS || 10000),

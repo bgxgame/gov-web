@@ -3,7 +3,7 @@ import { getCurrentUser, login as loginApi, logout as logoutApi } from '../api/a
 
 const USER_KEY = 'user_info'
 
-const MENU_ROUTE_PRIORITY = [
+export const MENU_ROUTE_PRIORITY = [
   { menu: 'dashboard:view', path: '/dashboard' },
   { menu: 'project:manage', path: '/project/manage' },
   { menu: 'project:engineering', path: '/project/engineering' },
@@ -13,6 +13,23 @@ const MENU_ROUTE_PRIORITY = [
   { menu: 'system:audit', path: '/system/audit' },
   { menu: 'system:frontend-monitor', path: '/system/frontend-monitor' }
 ]
+
+export function resolveHomePathByMenuKeys(menuKeys) {
+  const normalizedMenus = normalizeMenuKeys(menuKeys)
+  return MENU_ROUTE_PRIORITY.find((item) => normalizedMenus.includes(item.menu))?.path || null
+}
+
+export function resolveHomePathFromCachedUserInfo() {
+  if (typeof window === 'undefined') return null
+  const raw = localStorage.getItem(USER_KEY)
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw)
+    return resolveHomePathByMenuKeys(parsed?.menuKeys)
+  } catch (error) {
+    return null
+  }
+}
 
 /**
  * 职责：标准化历史角色编码，统一成前端只关心的 `admin / dept_leader / user`。
@@ -105,17 +122,18 @@ function hasCompleteUserInfoPayload(data) {
  * 关联链路：登录 -> 初始化用户信息 -> 计算默认首页 -> 路由权限判断。
  */
 export const useSessionStore = defineStore('session', {
-  state: () => ({
-    token: localStorage.getItem('token') || '',
-    userInfo: parseUserInfo(),
-    _userInfoPromise: null
-  }),
+  state: () => {
+    const cachedUserInfo = parseUserInfo()
+    return {
+      token: localStorage.getItem('token') || '',
+      userInfo: cachedUserInfo,
+      userInfoSource: cachedUserInfo ? 'cache' : '',
+      _userInfoPromise: null
+    }
+  },
   getters: {
     isAuthenticated: (state) => Boolean(state.token),
-    homePath: (state) => {
-      const menuKeys = state.userInfo?.menuKeys || []
-      return MENU_ROUTE_PRIORITY.find((item) => menuKeys.includes(item.menu))?.path || null
-    }
+    homePath: (state) => resolveHomePathByMenuKeys(state.userInfo?.menuKeys || [])
   },
   actions: {
     /**
@@ -139,8 +157,9 @@ export const useSessionStore = defineStore('session', {
      * 关键输入输出：输入为标准化用户对象或 `null`，输出为更新后的用户信息状态。
      * 关联链路：登录、会话恢复、权限刷新、退出登录。
      */
-    setUserInfo(userInfo) {
+    setUserInfo(userInfo, source = 'manual') {
       this.userInfo = userInfo || null
+      this.userInfoSource = userInfo ? source : ''
       if (userInfo) {
         localStorage.setItem(USER_KEY, JSON.stringify(userInfo))
       } else {
@@ -156,6 +175,7 @@ export const useSessionStore = defineStore('session', {
      */
     clearSession() {
       this._userInfoPromise = null
+      this.userInfoSource = ''
       this.setToken('')
       this.setUserInfo(null)
     },
@@ -169,7 +189,7 @@ export const useSessionStore = defineStore('session', {
     async login(payload) {
       const res = await loginApi(payload)
       this.setToken(res.data.tokenValue)
-      this.setUserInfo(normalizeUserInfo(res.data, payload.username))
+      this.setUserInfo(normalizeUserInfo(res.data, payload.username), 'login')
 
       if (!hasCompleteUserInfoPayload(res.data)) {
         try {
@@ -192,7 +212,7 @@ export const useSessionStore = defineStore('session', {
       if (!this.token) return null
       const res = await getCurrentUser()
       const userInfo = normalizeUserInfo(res.data, this.userInfo?.username)
-      this.setUserInfo(userInfo)
+      this.setUserInfo(userInfo, 'server')
       return userInfo
     },
 
@@ -219,7 +239,7 @@ export const useSessionStore = defineStore('session', {
         this._userInfoPromise = getCurrentUser()
           .then((res) => {
             const userInfo = normalizeUserInfo(res.data, this.userInfo?.username)
-            this.setUserInfo(userInfo)
+            this.setUserInfo(userInfo, 'server')
             return userInfo
           })
           .finally(() => {

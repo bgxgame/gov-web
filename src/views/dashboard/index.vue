@@ -43,8 +43,10 @@
 <script setup>
 import { computed, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { Location } from '@element-plus/icons-vue'
+import { appConfig } from '../../config/app-config'
 import { fetchProjectMapListByFilters, getProjectDetail } from '../../api/project'
 import { showError } from '../../utils/feedback'
+import { logger } from '../../utils/logger'
 
 /**
  * 职责：展示已审批通过项目的地图分布，并支持城市、区县、项目三级下钻。
@@ -80,6 +82,13 @@ const mapCache = new Map()
 const echartsRuntime = {
   init: null,
   registerMap: null
+}
+
+function nowMs() {
+  if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
+    return performance.now()
+  }
+  return Date.now()
 }
 
 const hasMapData = computed(() => allApprovedRows.value.length > 0)
@@ -285,8 +294,15 @@ async function fetchApprovedMapRows() {
 }
 
 async function performReload() {
+  const startAt = nowMs()
   await fetchApprovedMapRows()
   await renderMap()
+  const durationMs = Math.round(nowMs() - startAt)
+  if (durationMs >= appConfig.slowRequestThreshold) {
+    logger.warn('首页地图数据刷新偏慢', { durationMs, rows: allApprovedRows.value.length, level: viewLevel.value })
+  } else {
+    logger.debug('首页地图数据刷新完成', { durationMs, rows: allApprovedRows.value.length, level: viewLevel.value })
+  }
 }
 
 function reloadMapData() {
@@ -383,8 +399,10 @@ function ensureResizeListener(active) {
 }
 
 async function setupChart() {
+  const setupStartAt = nowMs()
   await nextTick()
   await new Promise((resolve) => requestAnimationFrame(resolve))
+  const waitContainerMs = Math.round(nowMs() - setupStartAt)
 
   const container = mapContainerRef.value
   if (!container) {
@@ -392,9 +410,13 @@ async function setupChart() {
     return
   }
 
+  const runtimeStartAt = nowMs()
   const runtime = await ensureEchartsReady()
+  const runtimeReadyMs = Math.round(nowMs() - runtimeStartAt)
   chart = runtime.init(container)
+  const mapStartAt = nowMs()
   const rootLoaded = await ensureMapRegistered(ROOT_ADCODE, ROOT_MAP_KEY)
+  const mapResourceMs = Math.round(nowMs() - mapStartAt)
   if (!rootLoaded) {
     showError('陕西地图资源加载失败')
     return
@@ -402,7 +424,16 @@ async function setupChart() {
   currentMapKey.value = ROOT_MAP_KEY
 
   bindChartEvents()
+  const firstRenderStartAt = nowMs()
   await performReload()
+  const firstRenderMs = Math.round(nowMs() - firstRenderStartAt)
+  const totalMs = Math.round(nowMs() - setupStartAt)
+  const payload = { waitContainerMs, runtimeReadyMs, mapResourceMs, firstRenderMs, totalMs, rows: allApprovedRows.value.length }
+  if (totalMs >= 1200) {
+    logger.warn('首页地图初始化偏慢', payload)
+  } else {
+    logger.debug('首页地图初始化完成', payload)
+  }
 }
 
 onMounted(async () => {

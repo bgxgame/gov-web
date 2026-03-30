@@ -15,7 +15,7 @@
             autocomplete="current-password"
           />
         </el-form-item>
-        <el-button type="primary" native-type="submit" :loading="submitting" @click="handleLogin" style="width: 100%">
+        <el-button type="primary" native-type="submit" :loading="submitting" style="width: 100%">
           登录
         </el-button>
       </el-form>
