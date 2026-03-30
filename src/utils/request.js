@@ -18,6 +18,10 @@ const service = axios.create({
 let redirectedBy401 = false
 const pendingRequestControllers = new Map()
 
+function shouldSilenceErrorMessage(config) {
+  return Boolean(config?.silentError)
+}
+
 function resolveCancelKey(config) {
   const raw = String(config?.cancelKey || '').trim()
   return raw || ''
@@ -96,12 +100,14 @@ service.interceptors.response.use(
 
     if (res.code !== 200) {
       logger.warn('接口业务失败', { url: requestUrl, code: res.code, msg: res.msg, durationMs, traceId })
+      let messageHandled = false
       if (res.code === 401) {
         localStorage.removeItem('token')
         localStorage.removeItem('user_info')
         if (!redirectedBy401) {
           redirectedBy401 = true
           showError(res.msg || '登录已失效，请重新登录')
+          messageHandled = true
           if (window.location.pathname !== '/login') {
             window.location.replace('/login')
           }
@@ -109,15 +115,16 @@ service.interceptors.response.use(
             redirectedBy401 = false
           }, 800)
         }
-      } else {
+      } else if (!shouldSilenceErrorMessage(response.config)) {
         showError(res.msg || '系统错误')
+        messageHandled = true
       }
 
       const apiError = new Error(getErrorMessage({ response: { data: res } }))
       apiError.code = res.code
       apiError.msg = res.msg
       apiError.traceId = traceId
-      apiError.__messageHandled = true
+      apiError.__messageHandled = messageHandled
       return Promise.reject(apiError)
     }
 
@@ -153,7 +160,7 @@ service.interceptors.response.use(
       traceId
     })
 
-    if (!error?.__messageHandled) {
+    if (!error?.__messageHandled && !shouldSilenceErrorMessage(error?.config)) {
       showError(getErrorMessage(error, '网络请求失败'))
       error.__messageHandled = true
     }

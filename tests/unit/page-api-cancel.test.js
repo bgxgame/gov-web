@@ -99,10 +99,16 @@ describe('page api cancel keys', () => {
    */
   it('should attach cancel key for current user request', async () => {
     requestGet.mockResolvedValue({ data: {} })
-    const { getCurrentUser } = await import('../../src/api/auth')
+    const { getCurrentUser, login } = await import('../../src/api/auth')
 
     await getCurrentUser()
+    await login({ username: 'admin', password: 'secret' })
 
     expect(requestGet).toHaveBeenCalledWith('/system/me', expect.objectContaining({ cancelKey: 'auth:me' }))
+    expect(requestPost).toHaveBeenCalledWith(
+      '/system/login',
+      { username: 'admin', password: 'secret' },
+      expect.objectContaining({ silentError: true })
+    )
   })
 })

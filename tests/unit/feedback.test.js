@@ -39,8 +39,19 @@ describe('feedback utils', () => {
 
     handleActionError({ message: 'Network Error' }, '提交失败，请稍后重试')
     expect(messageError).toHaveBeenCalledTimes(1)
+    expect(messageError).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        customClass: 'app-message app-message--error'
+      })
+    )
 
     handleActionError({ __messageHandled: true, message: 'ignored' }, '不会重复提示')
     expect(messageError).toHaveBeenCalledTimes(1)
+  })
+
+  it('should prefer backend chinese message when available', async () => {
+    const { getErrorMessage } = await import('../../src/utils/feedback')
+
+    expect(getErrorMessage({ response: { data: { msg: '账号已停用' } } }, '默认错误')).toBe('账号已停用')
   })
 })

@@ -20,8 +20,22 @@ const MESSAGE_MAP = {
 const MESSAGE_OPTIONS = {
   showClose: true,
   grouping: true,
-  duration: 2600,
   offset: 20
+}
+
+const MESSAGE_PRESETS = {
+  success: {
+    duration: 2200,
+    customClass: 'app-message app-message--success'
+  },
+  warning: {
+    duration: 3200,
+    customClass: 'app-message app-message--warning'
+  },
+  error: {
+    duration: 4200,
+    customClass: 'app-message app-message--error'
+  }
 }
 
 function normalizeMessage(message, fallback) {
@@ -42,34 +56,33 @@ export function getErrorMessage(error, fallback = '系统繁忙，请稍后重�
   return normalizeMessage(responseMessage || directMessage, fallback)
 }
 
+function resolveMessageOptions(kind, message, fallback) {
+  return {
+    ...MESSAGE_OPTIONS,
+    ...(MESSAGE_PRESETS[kind] || {}),
+    message: normalizeMessage(message, fallback)
+  }
+}
+
 /**
  * 作用：弹出统一成功提示。
  */
 export function showSuccess(message = '操作成功') {
-  ElMessage.success({
-    ...MESSAGE_OPTIONS,
-    message: normalizeMessage(message, '操作成功')
-  })
+  ElMessage.success(resolveMessageOptions('success', message, '操作成功'))
 }
 
 /**
  * 作用：弹出统一警告提示。
  */
 export function showWarning(message = '请检查后重试') {
-  ElMessage.warning({
-    ...MESSAGE_OPTIONS,
-    message: normalizeMessage(message, '请检查后重试')
-  })
+  ElMessage.warning(resolveMessageOptions('warning', message, '请检查后重试'))
 }
 
 /**
  * 作用：弹出统一错误提示。
  */
 export function showError(message = '系统繁忙，请稍后重试') {
-  ElMessage.error({
-    ...MESSAGE_OPTIONS,
-    message: normalizeMessage(message, '系统繁忙，请稍后重试')
-  })
+  ElMessage.error(resolveMessageOptions('error', message, '系统繁忙，请稍后重试'))
 }
 
 /**
