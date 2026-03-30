@@ -10,6 +10,18 @@ import { expect, test } from '@playwright/test'
  * 作用：验证登录成功后会跳到菜单允许的首页，并把 token 持久化到本地存储。
  */
 test('登录后应跳转到菜单允许的首页', async ({ page }) => {
+  await page.route('**/api/system/frontend-monitor/report', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        code: 200,
+        msg: '操作成功',
+        data: true
+      })
+    })
+  })
+
   await page.route('**/api/system/login', async (route) => {
     await route.fulfill({
       status: 200,

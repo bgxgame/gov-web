@@ -90,4 +90,15 @@ describe('session store', () => {
     expect(store.userInfo).toBeNull()
     expect(window.localStorage.getItem('token')).toBeNull()
   })
+
+  /**
+   * 作用：验证从本地缓存恢复的菜单权限可以正确推导默认首页。
+   */
+  it('should resolve home path from cached user info', async () => {
+    window.localStorage.setItem('user_info', JSON.stringify({ menuKeys: ['project:manage'] }))
+
+    const { resolveHomePathFromCachedUserInfo } = await import('../../src/stores/session')
+
+    expect(resolveHomePathFromCachedUserInfo()).toBe('/project/manage')
+  })
 })

@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { useSessionStore } from '../stores/session'
+import { resolveHomePathFromCachedUserInfo, useSessionStore } from '../stores/session'
+import { appConfig } from '../config/app-config'
 import { showError } from '../utils/feedback'
 import { logUserAction, logger } from '../utils/logger'
 import { finishRouteProgress, startRouteProgress } from '../utils/route-progress'
@@ -20,7 +21,7 @@ const routes = [
   {
     path: '/',
     component: () => import('../layout/index.vue'),
-    redirect: '/dashboard',
+    redirect: () => resolveProtectedEntryPath(),
     children: [
       {
         path: 'dashboard',
@@ -122,9 +123,32 @@ const router = createRouter({
 })
 
 let currentRouteProgressToken = 0
+let currentRouteGuardMetrics = null
 
 function resolveHomePath(sessionStore) {
   return sessionStore.homePath && sessionStore.homePath !== '/login' ? sessionStore.homePath : '/dashboard'
+}
+
+function resolveProtectedEntryPath() {
+  if (typeof window === 'undefined') return '/dashboard'
+  const token = localStorage.getItem('token')
+  if (!token) return '/login'
+  return resolveHomePathFromCachedUserInfo() || '/dashboard'
+}
+
+function nowMs() {
+  if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
+    return performance.now()
+  }
+  return Date.now()
+}
+
+function resolveDeniedNavigationTarget(to, from, sessionStore) {
+  if (from?.path && from.path !== to.path) {
+    return false
+  }
+  const homePath = sessionStore.homePath
+  return homePath && homePath !== to.path ? homePath : false
 }
 
 /**
@@ -134,7 +158,23 @@ function resolveHomePath(sessionStore) {
  * 关联链路：登录跳转、菜单切换、刷新页面后的权限恢复。
  */
 router.beforeEach(async (to, from, next) => {
-  currentRouteProgressToken = startRouteProgress()
+  const guardStartAt = nowMs()
+  currentRouteProgressToken = startRouteProgress({
+    fromPath: from.path,
+    toPath: to.path,
+    redirectedFromPath: to.redirectedFrom?.fullPath || ''
+  })
+  const guardMetrics = {
+    token: currentRouteProgressToken,
+    startedAt: guardStartAt,
+    fromPath: from.path,
+    toPath: to.path,
+    redirectedFromPath: to.redirectedFrom?.fullPath || '',
+    ensureUserInfoMs: 0,
+    forceRefreshPermissionMs: 0,
+    decision: 'allow'
+  }
+  currentRouteGuardMetrics = guardMetrics
   const sessionStore = useSessionStore()
   const isPublic = Boolean(to.meta?.isPublic)
   logUserAction('route_before_each', {
@@ -147,6 +187,7 @@ router.beforeEach(async (to, from, next) => {
   if (isPublic) {
     if (to.path === '/login' && sessionStore.isAuthenticated) {
       const homePath = resolveHomePath(sessionStore)
+      guardMetrics.decision = 'redirect_login_to_home'
       logger.info('已登录用户访问登录页，自动跳转首页', {
         fromPath: from.path,
         toPath: to.path,
@@ -160,6 +201,7 @@ router.beforeEach(async (to, from, next) => {
   }
 
   if (!sessionStore.isAuthenticated) {
+    guardMetrics.decision = 'redirect_to_login'
     logger.warn('未登录访问受保护页面，已跳转登录页', {
       fromPath: from.path,
       toPath: to.path
@@ -169,8 +211,11 @@ router.beforeEach(async (to, from, next) => {
   }
 
   try {
+    const ensureStartAt = nowMs()
     await sessionStore.ensureUserInfo()
+    guardMetrics.ensureUserInfoMs = Math.round(nowMs() - ensureStartAt)
   } catch (error) {
+    guardMetrics.decision = 'logout_and_redirect_login'
     logger.error('补拉当前用户信息失败，已清理会话', {
       fromPath: from.path,
       toPath: to.path,
@@ -183,20 +228,26 @@ router.beforeEach(async (to, from, next) => {
 
   const requiredMenus = to.meta?.menus || []
   if (requiredMenus.length > 0 && !sessionStore.hasAnyMenu(requiredMenus)) {
-    try {
-      await sessionStore.ensureUserInfo(true)
-    } catch (error) {
-      logger.error('强制刷新用户权限失败，已清理会话', {
-        fromPath: from.path,
-        toPath: to.path,
-        message: error?.message
-      })
-      await sessionStore.logout(false)
-      next('/login')
-      return
+    if (sessionStore.userInfoSource === 'cache') {
+      try {
+        const refreshStartAt = nowMs()
+        await sessionStore.ensureUserInfo(true)
+        guardMetrics.forceRefreshPermissionMs = Math.round(nowMs() - refreshStartAt)
+      } catch (error) {
+        guardMetrics.decision = 'force_refresh_failed_redirect_login'
+        logger.error('强制刷新用户权限失败，已清理会话', {
+          fromPath: from.path,
+          toPath: to.path,
+          message: error?.message
+        })
+        await sessionStore.logout(false)
+        next('/login')
+        return
+      }
     }
 
     if (!sessionStore.hasAnyMenu(requiredMenus)) {
+      guardMetrics.decision = 'redirect_permission_denied'
       logger.warn('用户访问了无权限页面，已阻止跳转', {
         fromPath: from.path,
         toPath: to.path,
@@ -204,8 +255,7 @@ router.beforeEach(async (to, from, next) => {
         homePath: sessionStore.homePath
       })
       showError('当前账号暂无权限访问该页面')
-      const homePath = sessionStore.homePath
-      next(homePath && homePath !== to.path ? homePath : false)
+      next(resolveDeniedNavigationTarget(to, from, sessionStore))
       return
     }
   }
@@ -215,6 +265,7 @@ router.beforeEach(async (to, from, next) => {
   if (!hasMenuGate && requiredRoles.length > 0 && !sessionStore.hasAnyRole(requiredRoles)) {
     const homePath = sessionStore.homePath
     if (!homePath) {
+      guardMetrics.decision = 'role_denied_logout'
       logger.warn('用户角色不满足页面要求且没有可用首页，已回到登录页', {
         fromPath: from.path,
         toPath: to.path,
@@ -224,20 +275,51 @@ router.beforeEach(async (to, from, next) => {
       next('/login')
       return
     }
+    guardMetrics.decision = 'role_denied_redirect_home'
     logger.warn('用户角色不满足页面要求，已跳回可访问首页', {
       fromPath: from.path,
       toPath: to.path,
       requiredRoles,
       homePath
     })
-    next(homePath === to.path ? false : homePath)
+    next(resolveDeniedNavigationTarget(to, from, sessionStore))
     return
   }
 
+  guardMetrics.guardDurationMs = Math.round(nowMs() - guardStartAt)
   next()
 })
 
 router.afterEach((to, from, failure) => {
+  const routeMetrics = finishRouteProgress(currentRouteProgressToken)
+  const guardMetrics = currentRouteGuardMetrics && currentRouteGuardMetrics.token === currentRouteProgressToken
+    ? currentRouteGuardMetrics
+    : null
+  if (guardMetrics) {
+    if (!guardMetrics.guardDurationMs) {
+      guardMetrics.guardDurationMs = Math.round(nowMs() - guardMetrics.startedAt)
+    }
+    const routePerfPayload = {
+      fromPath: guardMetrics.fromPath,
+      toPath: guardMetrics.toPath,
+      redirectedFromPath: guardMetrics.redirectedFromPath,
+      decision: guardMetrics.decision,
+      ensureUserInfoMs: guardMetrics.ensureUserInfoMs,
+      forceRefreshPermissionMs: guardMetrics.forceRefreshPermissionMs,
+      guardDurationMs: guardMetrics.guardDurationMs,
+      routeDurationMs: routeMetrics?.durationMs,
+      routeThresholdMs: routeMetrics?.thresholdMs,
+      hasSlowGuard: guardMetrics.guardDurationMs >= appConfig.slowRouteThreshold,
+      hasSlowRoute: routeMetrics ? routeMetrics.durationMs >= routeMetrics.thresholdMs : false,
+      failure: Boolean(failure)
+    }
+    if (routePerfPayload.hasSlowGuard || routePerfPayload.hasSlowRoute) {
+      logger.warn('路由性能剖析', routePerfPayload)
+    } else {
+      logger.debug('路由性能剖析', routePerfPayload)
+    }
+  }
+
   if (failure) {
     logger.warn('路由切换完成但存在导航失败', {
       fromPath: from.path,
@@ -250,11 +332,22 @@ router.afterEach((to, from, failure) => {
       toPath: to.path
     }, 'debug')
   }
-  finishRouteProgress(currentRouteProgressToken)
+  currentRouteGuardMetrics = null
 })
 
 router.onError((error) => {
-  finishRouteProgress(currentRouteProgressToken, { hasError: true })
+  const routeMetrics = finishRouteProgress(currentRouteProgressToken, { hasError: true })
+  if (routeMetrics) {
+    logger.warn('路由性能剖析', {
+      fromPath: routeMetrics.fromPath,
+      toPath: routeMetrics.toPath,
+      redirectedFromPath: routeMetrics.redirectedFromPath,
+      routeDurationMs: routeMetrics.durationMs,
+      routeThresholdMs: routeMetrics.thresholdMs,
+      hasError: true
+    })
+  }
+  currentRouteGuardMetrics = null
   logger.error('路由加载失败', { message: error?.message })
   showError('页面加载失败，请稍后重试')
 })

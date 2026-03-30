@@ -11,7 +11,7 @@ import request from '../utils/request'
  * @param {Record<string, unknown>} payload 登录表单
  * @returns {Promise<any>} 登录响应
  */
-export const login = (payload) => request.post('/system/login', payload)
+export const login = (payload) => request.post('/system/login', payload, { silentError: true })
 
 /**
  * 调用退出登录接口。

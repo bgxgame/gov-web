@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 /**
  * 职责：验证登录页组件在浏览器中的关键交互。
@@ -11,7 +11,7 @@ import { describe, expect, it, vi } from 'vitest'
 const replace = vi.fn()
 const login = vi.fn()
 const showSuccess = vi.fn()
-const showWarning = vi.fn()
+const getErrorMessage = vi.fn((error) => error?.msg || error?.message || '登录失败')
 
 vi.mock('vue-router', () => ({
   useRouter: () => ({ replace })
@@ -26,7 +26,7 @@ vi.mock('../../src/stores/session', () => ({
 
 vi.mock('../../src/utils/feedback', () => ({
   showSuccess,
-  showWarning
+  getErrorMessage
 }))
 
 const ElInputStub = {
@@ -36,8 +36,7 @@ const ElInputStub = {
 }
 
 const ElButtonStub = {
-  emits: ['click'],
-  template: '<button @click="$emit(\'click\')"><slot /></button>'
+  template: '<button type="submit"><slot /></button>'
 }
 
 const globalStubs = {
@@ -49,6 +48,14 @@ const globalStubs = {
 }
 
 describe('login view', () => {
+  beforeEach(() => {
+    replace.mockReset()
+    login.mockReset()
+    showSuccess.mockReset()
+    getErrorMessage.mockReset()
+    getErrorMessage.mockImplementation((error) => error?.msg || error?.message || '登录失败')
+  })
+
   /**
    * 作用：验证登录页会调用登录动作，并在成功后跳到会话层计算出的首页。
    */
@@ -65,11 +72,36 @@ describe('login view', () => {
     const inputs = wrapper.findAll('input')
     await inputs[0].setValue('admin')
     await inputs[1].setValue('secret')
-    await wrapper.find('button').trigger('click')
+    await wrapper.find('form').trigger('submit')
     await nextTick()
 
     expect(login).toHaveBeenCalledWith({ username: 'admin', password: 'secret' })
     expect(showSuccess).toHaveBeenCalled()
     expect(replace).toHaveBeenCalledWith('/project/manage')
+  })
+
+  /**
+   * 作用：验证登录失败时会在表单内显示明确错误，而不是只依赖顶部提示。
+   */
+  it('should show inline error message when login fails', async () => {
+    login.mockRejectedValue({ msg: '账号已停用' })
+
+    const LoginView = (await import('../../src/views/login/index.vue')).default
+    const wrapper = mount(LoginView, {
+      global: {
+        stubs: globalStubs
+      }
+    })
+
+    const inputs = wrapper.findAll('input')
+    await inputs[0].setValue('disabled-user')
+    await inputs[1].setValue('secret')
+    await wrapper.find('form').trigger('submit')
+    await nextTick()
+
+    expect(getErrorMessage).toHaveBeenCalled()
+    expect(wrapper.text()).toContain('账号已停用')
+    expect(showSuccess).not.toHaveBeenCalled()
+    expect(replace).not.toHaveBeenCalled()
   })
 })

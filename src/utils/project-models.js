@@ -8,9 +8,9 @@
 
 /**
  * @typedef {Object} ProjectFormModel
- * Local editable form model.
- * Field names intentionally stay aligned with the backend
- * `ProjectCreateDTO`, `ProjectUpdateDTO` and `ProjectDetailVO` subset.
+ * 本地可编辑的项目表单模型。
+ * 字段名尽量与后端 `ProjectCreateDTO`、`ProjectUpdateDTO`
+ * 和 `ProjectDetailVO` 的公共字段保持一致。
  *
  * @property {string|undefined} id
  * @property {string} projectName
@@ -30,8 +30,8 @@
  */
 
 /**
- * Trim text-like input and collapse empty values to `undefined`
- * so query params and payloads do not send meaningless blanks.
+ * 统一裁剪文本类输入，并把空值折叠为 `undefined`，
+ * 避免查询参数和提交载荷带上无意义空字符串。
  *
  * @param {unknown} value
  * @returns {string|undefined}
@@ -42,7 +42,7 @@ function normalizeOptionalText(value) {
 }
 
 /**
- * Convert loose form coordinate input into a number or `null`.
+ * 将表单中的坐标输入标准化为数字或 `null`。
  *
  * @param {unknown} value
  * @returns {number|null}
@@ -54,7 +54,7 @@ function normalizeCoordinate(value) {
 }
 
 /**
- * Create the default editable project form shape used by the page.
+ * 创建页面使用的默认项目表单结构。
  *
  * @returns {ProjectFormModel}
  */
@@ -79,8 +79,8 @@ export function createEmptyProjectForm() {
 }
 
 /**
- * Normalize API detail/list data into the local dialog form shape.
- * The helper also tries to infer `leaderUserId` from the cached user list.
+ * 将接口详情或列表数据标准化为本地弹窗表单结构。
+ * 同时会尽量根据当前缓存的用户选项回推 `leaderUserId`。
  *
  * @param {Partial<ProjectFormModel>|null|undefined} project
  * @param {ProjectUserOption[]} [userOptions=[]]
@@ -115,12 +115,12 @@ export function normalizeProjectForm(project, userOptions = []) {
 }
 
 /**
- * Build the page query object expected by `/project/page`.
- * The returned keys stay aligned with backend `ProjectPageVO` filters.
+ * 构建 `/project/page` 所需的查询参数。
+ * 返回字段与后端分页筛选参数保持一致。
  *
- * @param {{ projectName?: string, status?: number, province?: string }} queryForm
+ * @param {{ projectName?: string, status?: number, province?: string, city?: string, district?: string }} queryForm
  * @param {{ pageNum: number, pageSize: number }} pagination
- * @returns {{ pageNum: number, pageSize: number, projectName?: string, status?: number, province?: string }}
+ * @returns {{ pageNum: number, pageSize: number, projectName?: string, status?: number, province?: string, city?: string, district?: string }}
  */
 export function buildProjectPageParams(queryForm, pagination) {
   return {
@@ -128,12 +128,14 @@ export function buildProjectPageParams(queryForm, pagination) {
     pageSize: pagination.pageSize,
     projectName: normalizeOptionalText(queryForm.projectName),
     status: queryForm.status,
-    province: normalizeOptionalText(queryForm.province)
+    province: normalizeOptionalText(queryForm.province),
+    city: normalizeOptionalText(queryForm.city),
+    district: normalizeOptionalText(queryForm.district)
   }
 }
 
 /**
- * Build query params for `/project/map/list`.
+ * 构建 `/project/map/list` 所需的查询参数。
  *
  * @param {{ province?: string, city?: string, district?: string }|undefined} filters
  * @returns {{ province?: string, city?: string, district?: string }}
@@ -147,10 +149,25 @@ export function buildProjectMapParams(filters) {
 }
 
 /**
- * Convert the editable project form into the payload shape expected by
- * create/update project APIs.
- * The payload is a frontend subset of backend `ProjectCreateDTO`
- * and `ProjectUpdateDTO`.
+ * 构建 `/project/map/summary` 所需的查询参数。
+ *
+ * @param {'city'|'district'|string|undefined} level
+ * @param {{ province?: string, city?: string, district?: string }|undefined} filters
+ * @returns {{ level?: string, province?: string, city?: string, district?: string }}
+ */
+export function buildProjectMapSummaryParams(level, filters) {
+  const normalizedLevel = String(level || '').trim()
+  return {
+    level: normalizedLevel || undefined,
+    province: normalizeOptionalText(filters?.province),
+    city: normalizeOptionalText(filters?.city),
+    district: normalizeOptionalText(filters?.district)
+  }
+}
+
+/**
+ * 将可编辑项目表单转换为创建或更新接口所需的提交载荷。
+ * 这里返回的是前端侧维护的后端 DTO 子集。
  *
  * @param {ProjectFormModel} form
  * @returns {Record<string, unknown>}
@@ -179,7 +196,7 @@ export function buildProjectSavePayload(form) {
 }
 
 /**
- * Build the minimal payload expected by backend `ProjectSubmitDTO`.
+ * 构建后端 `ProjectSubmitDTO` 所需的最小提交载荷。
  *
  * @param {string|number|undefined|null} projectId
  * @returns {{ id: string|number|undefined|null }}

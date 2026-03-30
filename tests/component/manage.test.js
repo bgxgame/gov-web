@@ -1,5 +1,6 @@
 import { mount } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 /**
  * 职责：验证项目管理页的首屏与弹窗数据加载策略。
@@ -62,9 +63,10 @@ const globalStubs = {
   ElInput: ElInputStub,
   ElButton: ElButtonStub,
   ElSelect: {
-    props: ['modelValue'],
+    props: ['modelValue', 'disabled'],
     emits: ['update:modelValue', 'change'],
-    template: '<select @change="$emit(\'update:modelValue\', $event.target.value); $emit(\'change\', $event.target.value)"><slot /></select>'
+    template:
+      '<select :value="modelValue" :disabled="disabled" @change="$emit(\'update:modelValue\', $event.target.value); $emit(\'change\', $event.target.value)"><slot /></select>'
   },
   ElOption: { props: ['label', 'value'], template: '<option :value="value">{{ label }}</option>' },
   ElTable: { template: '<div><slot /></div>' },
@@ -79,6 +81,16 @@ const globalStubs = {
 }
 
 describe('manage view', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  async function flushView() {
+    await Promise.resolve()
+    await Promise.resolve()
+    await nextTick()
+  }
+
   /**
    * 作用：验证页面首屏只查列表，负责人候选只在弹窗打开时加载且只加载一次。
    */
@@ -100,19 +112,54 @@ describe('manage view', () => {
       }
     })
 
-    await Promise.resolve()
-    await Promise.resolve()
+    await flushView()
 
     expect(fetchProjectPageByForm).toHaveBeenCalledTimes(1)
 
     const buttons = wrapper.findAll('button')
     await buttons[2].trigger('click')
-    await Promise.resolve()
-    await Promise.resolve()
+    await flushView()
     await buttons[2].trigger('click')
-    await Promise.resolve()
-    await Promise.resolve()
+    await flushView()
 
     expect(getUserSimple).toHaveBeenCalledTimes(1)
+  })
+
+  it('should cascade province city district filters and reset downstream selections', async () => {
+    fetchProjectPageByForm.mockResolvedValue({
+      data: { records: [], total: 0 }
+    })
+    getUserSimple.mockResolvedValue({ data: [] })
+
+    const ManageView = (await import('../../src/views/project/manage.vue')).default
+    const wrapper = mount(ManageView, {
+      global: {
+        stubs: globalStubs
+      }
+    })
+
+    await flushView()
+
+    const selects = wrapper.findAll('select')
+    expect(selects[1].findAll('option').map((item) => item.text())).toContain('陕西省')
+
+    await selects[1].setValue('陕西省')
+    await flushView()
+    expect(selects[2].findAll('option').map((item) => item.text())).toContain('西安市')
+
+    await selects[2].setValue('西安市')
+    await flushView()
+    expect(selects[3].findAll('option').map((item) => item.text())).toContain('雁塔区')
+
+    await selects[3].setValue('雁塔区')
+    await flushView()
+
+    await selects[1].setValue('')
+    await flushView()
+
+    const latestQueryForm = fetchProjectPageByForm.mock.calls.at(0)?.[0]
+    expect(latestQueryForm.province).toBe('')
+    expect(latestQueryForm.city).toBe('')
+    expect(latestQueryForm.district).toBe('')
   })
 })

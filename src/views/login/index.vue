@@ -4,59 +4,83 @@
       <h2>信创政务管理系统</h2>
       <el-form :model="loginForm" @submit.prevent="handleLogin">
         <el-form-item>
-          <el-input v-model="loginForm.username" placeholder="用户名" autocomplete="username" autofocus />
+          <el-input
+            id="login-username"
+            v-model="loginForm.username"
+            name="username"
+            placeholder="用户名"
+            autocomplete="username"
+            autofocus
+          />
         </el-form-item>
         <el-form-item>
           <el-input
+            id="login-password"
             v-model="loginForm.password"
+            name="password"
             type="password"
             placeholder="密码"
             show-password
             autocomplete="current-password"
           />
         </el-form-item>
-        <el-button type="primary" native-type="submit" :loading="submitting" @click="handleLogin" style="width: 100%">
+        <el-button type="primary" native-type="submit" :loading="submitting" style="width: 100%">
           登录
         </el-button>
+        <div class="login-feedback-shell" aria-live="polite">
+          <p v-if="authErrorMessage" class="login-feedback login-feedback--error">{{ authErrorMessage }}</p>
+          <p v-else class="login-feedback login-feedback--hint">请输入账号密码后登录系统</p>
+        </div>
       </el-form>
     </el-card>
   </div>
 </template>
 
 <script setup>
-import { reactive, ref } from 'vue'
+import { reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSessionStore } from '../../stores/session'
-import { showSuccess, showWarning } from '../../utils/feedback'
+import { getErrorMessage, showSuccess } from '../../utils/feedback'
 
 // 职责：收集登录凭证并在成功后落到当前账号可访问的默认首页。
 const router = useRouter()
 const sessionStore = useSessionStore()
 const submitting = ref(false)
+const authErrorMessage = ref('')
 const loginForm = reactive({
   username: '',
   password: ''
 })
 
+watch(
+  () => [loginForm.username, loginForm.password],
+  () => {
+    if (authErrorMessage.value) {
+      authErrorMessage.value = ''
+    }
+  }
+)
+
 // 为什么存在：统一处理登录前校验、重复点击保护和登录成功后的跳转反馈。
 const handleLogin = async () => {
   if (submitting.value) return
   if (!String(loginForm.username || '').trim()) {
-    showWarning('请输入用户名')
+    authErrorMessage.value = '请输入用户名'
     return
   }
   if (!String(loginForm.password || '').trim()) {
-    showWarning('请输入密码')
+    authErrorMessage.value = '请输入密码'
     return
   }
 
   submitting.value = true
+  authErrorMessage.value = ''
   try {
     await sessionStore.login(loginForm)
     showSuccess('登录成功')
     await router.replace(sessionStore.homePath || '/dashboard')
   } catch (error) {
-    console.error(error)
+    authErrorMessage.value = getErrorMessage(error, '登录失败，请稍后重试')
   } finally {
     submitting.value = false
   }
@@ -75,5 +99,32 @@ const handleLogin = async () => {
 .login-card {
   width: 400px;
   text-align: center;
+  padding-bottom: 8px;
+}
+
+.login-feedback-shell {
+  min-height: 34px;
+  margin-top: 12px;
+}
+
+.login-feedback {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: left;
+}
+
+.login-feedback--hint {
+  color: #64748b;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+
+.login-feedback--error {
+  color: #b42318;
+  background: #fef3f2;
+  border: 1px solid #fecdca;
 }
 </style>
