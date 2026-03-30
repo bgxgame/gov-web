@@ -7,6 +7,18 @@
 - `npm run build`：构建生产包
 - `npm run test`：运行单元/组件测试（Vitest）
 - `npm run test:e2e`：运行端到端测试（Playwright）
+- `npm run test:smoke`：运行登录、首页地图、审批中心三条关键烟雾链路
+- `npm run build:stats`：构建并输出体积报告
+
+## 端到端测试说明
+- `Playwright` 默认直接复用本机已安装的 `Chrome` 通道，避免额外下载内置浏览器
+- 如需切换浏览器通道，可通过环境变量 `PLAYWRIGHT_BROWSER_CHANNEL=edge` 等方式覆盖
+- 首页地图烟雾测试已兼容中文 GeoJSON 文件名的 URL 编码场景
+
+## 地图资源
+- 通用兜底资源放在 `public/map-data/province.geojson`、`city.geojson`、`county.geojson`
+- 如果已经下载了分层地图资源，建议补 `public/map-data/resource-manifest.json`
+- 详细约定见 [docs/MAP_RESOURCE_GUIDE.md](./docs/MAP_RESOURCE_GUIDE.md)
 
 ## `.env` 日志开关
 为了让“改 `.env` 后有可见效果”，`dev/build` 命令已支持按 `.env` 自动写日志。

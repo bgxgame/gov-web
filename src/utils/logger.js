@@ -68,7 +68,7 @@ function writeBufferedLogs(logs) {
       window.sessionStorage.setItem(RUNTIME_LOG_KEY, JSON.stringify(normalizedLogs))
     }
   } catch (error) {
-    // 会话存储不可用时忽略，仅保留控制台输出。
+    // 会话存储不可用时静默忽略，仅保留控制台输出。
   }
   window.__GOV_APP_LOGS__ = normalizedLogs
 }
@@ -87,7 +87,7 @@ function appendRuntimeLog(level, args) {
   try {
     window.dispatchEvent(new CustomEvent(RUNTIME_LOG_EVENT, { detail: nextLog }))
   } catch (error) {
-    // 运行时日志派发失败时不影响主业务链路。
+    // 运行时日志事件派发失败时，不影响主业务链路。
   }
 }
 
@@ -114,8 +114,7 @@ export const logger = {
 }
 
 /**
- * 作用：
- * 记录用户在页面中的关键动作，方便和接口 traceId、后端 perf/audit 日志一起还原现场。
+ * 记录用户关键动作，便于和 traceId、后端性能日志、审计日志联动回放。
  *
  * @param {string} action 动作名称
  * @param {Record<string, unknown>} payload 动作附带信息
@@ -130,11 +129,7 @@ export function logUserAction(action, payload = {}, level = 'info') {
 }
 
 function resolveErrorPayload(eventOrReason) {
-  const message =
-    eventOrReason?.message ||
-    eventOrReason?.reason?.message ||
-    eventOrReason?.reason ||
-    '未知运行时异常'
+  const message = eventOrReason?.message || eventOrReason?.reason?.message || eventOrReason?.reason || '未知运行时异常'
   const source = eventOrReason?.filename || eventOrReason?.target?.location?.href || ''
   const line = eventOrReason?.lineno || eventOrReason?.line || ''
   const column = eventOrReason?.colno || eventOrReason?.column || ''
@@ -151,8 +146,7 @@ function resolveErrorPayload(eventOrReason) {
 }
 
 /**
- * 作用：
- * 安装浏览器全局运行时异常监听，把未捕获错误和未处理 Promise 拒绝写入统一日志缓冲。
+ * 安装浏览器全局运行时异常监听，将未捕获错误与未处理 Promise 拒绝写入统一日志缓冲。
  */
 export function installRuntimeErrorObservers() {
   if (typeof window === 'undefined' || runtimeObserversInstalled) return

@@ -1,0 +1,24 @@
+{
+  "province": {
+    "610000": "/map-data/split/provinces/610000.geojson",
+    "陕西省": "/map-data/split/provinces/610000.geojson",
+    "default": "/map-data/split/provinces/610000.geojson"
+  },
+  "city": {
+    "610000": "/map-data/split/city-groups/610000.geojson",
+    "陕西省": "/map-data/split/city-groups/610000.geojson",
+    "default": "/map-data/split/city-groups/610000.geojson"
+  },
+  "county": {
+    "610100": "/map-data/split/county-groups/610100.geojson",
+    "610200": "/map-data/split/county-groups/610200.geojson",
+    "610300": "/map-data/split/county-groups/610300.geojson",
+    "610400": "/map-data/split/county-groups/610400.geojson",
+    "610500": "/map-data/split/county-groups/610500.geojson",
+    "610600": "/map-data/split/county-groups/610600.geojson",
+    "610700": "/map-data/split/county-groups/610700.geojson",
+    "610800": "/map-data/split/county-groups/610800.geojson",
+    "610900": "/map-data/split/county-groups/610900.geojson",
+    "611000": "/map-data/split/county-groups/611000.geojson"
+  }
+}

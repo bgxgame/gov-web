@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildProjectMapParams,
+  buildProjectMapSummaryParams,
   buildProjectPageParams,
   buildProjectSavePayload,
   buildProjectSubmitPayload,
@@ -8,16 +9,7 @@ import {
   normalizeProjectForm
 } from '../../src/utils/project-models'
 
-/**
- * 职责：验证项目轻量模型辅助函数的纯数据语义。
- * 为什么存在：项目管理页大量依赖这些辅助函数来组织查询参数、保存 payload 和详情回填。
- * 关联链路：项目分页、新增编辑、详情回填、地图筛选、提交审批。
- */
-
 describe('project-models', () => {
-  /**
-   * 作用：验证默认空表单结构稳定，避免页面初始化字段漂移。
-   */
   it('should create an empty project form with stable defaults', () => {
     expect(createEmptyProjectForm()).toEqual({
       id: undefined,
@@ -38,9 +30,6 @@ describe('project-models', () => {
     })
   })
 
-  /**
-   * 作用：验证详情数据可以被归一化成页面可编辑的表单结构。
-   */
   it('should normalize detail data back into editable form shape', () => {
     const form = normalizeProjectForm(
       {
@@ -60,9 +49,6 @@ describe('project-models', () => {
     expect(form.status).toBe(3)
   })
 
-  /**
-   * 作用：验证新增 payload 会去掉无意义空值，并完成数字与空字符串归一化。
-   */
   it('should build create payload without meaningless blank fields', () => {
     const payload = buildProjectSavePayload({
       ...createEmptyProjectForm(),
@@ -92,9 +78,6 @@ describe('project-models', () => {
     })
   })
 
-  /**
-   * 作用：验证更新 payload 会保留 id，确保后端能够识别更新语义。
-   */
   it('should include id when building update payload', () => {
     const payload = buildProjectSavePayload({
       ...createEmptyProjectForm(),
@@ -106,11 +89,13 @@ describe('project-models', () => {
     expect(payload.projectName).toBe('更新项目')
   })
 
-  /**
-   * 作用：验证分页和地图筛选参数都会进行裁剪和空值处理。
-   */
   it('should build page and map query params with trimmed values', () => {
-    expect(buildProjectPageParams({ projectName: '  项目A ', status: 1, province: ' 陕西 ' }, { pageNum: 2, pageSize: 20 })).toEqual({
+    expect(
+      buildProjectPageParams(
+        { projectName: '  项目A ', status: 1, province: ' 陕西 ' },
+        { pageNum: 2, pageSize: 20 }
+      )
+    ).toEqual({
       pageNum: 2,
       pageSize: 20,
       projectName: '项目A',
@@ -123,11 +108,15 @@ describe('project-models', () => {
       city: undefined,
       district: '雁塔区'
     })
+
+    expect(buildProjectMapSummaryParams(' district ', { province: ' 陕西 ', city: ' 西安市 ', district: '' })).toEqual({
+      level: 'district',
+      province: '陕西',
+      city: '西安市',
+      district: undefined
+    })
   })
 
-  /**
-   * 作用：验证提交审批请求只保留最小必要字段。
-   */
   it('should build minimal submit payload', () => {
     expect(buildProjectSubmitPayload(18)).toEqual({ id: 18 })
   })

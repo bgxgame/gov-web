@@ -1,185 +1,80 @@
 # 前端架构总览
 
-## 1. 整体分层图
+## 1. 技术栈
+- 框架：Vue 3 + Vite
+- 路由：Vue Router
+- 状态：Pinia
+- UI：Element Plus
+- 请求：Axios
+- 图表与地图：ECharts
+- 测试：Vitest + Playwright
 
-```mermaid
-flowchart TD
-    A[浏览器 / 用户操作] --> B[Vue 3 应用入口 main.js]
-    B --> C[Vue Router 路由系统]
-    B --> D[Pinia Session Store]
-    B --> E[Layout 布局壳层]
-
-    C --> C1[登录页]
-    C --> C2[首页地图看板]
-    C --> C3[项目管理]
-    C --> C4[审批中心]
-    C --> C5[用户管理]
-    C --> C6[部门管理]
-    C --> C7[角色管理]
-
-    D --> D1[用户信息 userInfo]
-    D --> D2[角色码 roleCodes]
-    D --> D3[菜单权限 menuKeys]
-    D --> D4[homePath 首屏落点]
-
-    C3 --> F1[project-models.js]
-    C4 --> F2[flow-models.js]
-    C5 --> F3[system-models.js]
-    C6 --> F3
-    C7 --> F3
-
-    C1 --> G[api/*.js 业务 API 封装]
-    C2 --> G
-    C3 --> G
-    C4 --> G
-    C5 --> G
-    C6 --> G
-    C7 --> G
-
-    G --> H[request.js Axios 实例]
-    H --> H1[请求拦截: 注入 Authorization]
-    H --> H2[响应拦截: 统一处理 code/msg]
-    H --> H3[feedback.js 统一中文提示]
-    H --> I[/api 后端接口]
-```
-
-## 2. 页面与职责图
-
-```mermaid
-flowchart LR
-    A[layout/index.vue]
-    B[login/index.vue]
-    C[dashboard/index.vue]
-    D[project/manage.vue]
-    E[project/engineering.vue]
-    F[system/user.vue]
-    G[system/dept.vue]
-    H[system/role.vue]
-
-    A --> C
-    A --> D
-    A --> E
-    A --> F
-    A --> G
-    A --> H
-    B --> A
-
-    C -. 地图看板 / 点位下钻 .-> C1[project API + ECharts]
-    D -. 项目 CRUD / 提交审批 .-> D1[project API + project-models]
-    E -. 待办 / 已办 / 审批 .-> E1[flow API + flow-models]
-    F -. 用户分页 / 状态 / 角色 .-> F1[system API + system-models]
-    G -. 部门树 / 部门编辑 .-> G1[system API + system-models]
-    H -. 角色分页 / 菜单分配 .-> H1[system API + system-models]
-```
-
-## 3. 核心目录职责
-
+## 2. 总体分层
 ```text
 src/
-├─ api/
-│  ├─ project.js      项目相关接口与业务动作封装
-│  ├─ flow.js         审批流接口与分页/审批动作封装
-│  ├─ system.js       用户/部门/角色接口与业务动作封装
-│  └─ auth.js         认证相关接口
-├─ layout/
-│  └─ index.vue       左侧菜单 + 顶层壳层 + 退出登录
-├─ router/
-│  └─ index.js        路由定义、登录守卫、菜单权限守卫
-├─ stores/
-│  └─ session.js      登录、/me、角色/菜单标准化、homePath
-├─ utils/
-│  ├─ request.js      Axios 统一请求层
-│  ├─ feedback.js     成功/失败/确认框统一中文提示
-│  ├─ project-models.js 项目页表单/查询/提交模型适配
-│  ├─ system-models.js 用户/部门/角色模型适配
-│  └─ flow-models.js  审批分页/审批动作模型适配
-└─ views/
-   ├─ login/          登录页
-   ├─ dashboard/      地图看板
-   ├─ project/        项目管理、审批中心
-   └─ system/         用户、部门、角色管理
+├─ api/                 业务 API 封装
+├─ config/              运行时配置
+├─ layout/              主布局、侧边栏、头部交互
+├─ router/              路由定义与守卫
+├─ stores/              会话与权限状态
+├─ utils/               请求、日志、模型适配、地图工具
+└─ views/               业务页面
 ```
 
-## 4. 关键运行链路
+## 3. 核心链路
+### 3.1 登录与会话恢复
+1. 登录页调用 `api/auth.js`
+2. `stores/session.js` 统一落盘 `token` 和 `user_info`
+3. 路由守卫进入受保护页面前，确保用户信息已补齐
+4. 根据 `menuKeys` 计算默认首页落点，避免所有用户都落到固定首页
 
-### 登录链路
+### 3.2 权限控制
+- 权限以 `menuKeys` 为主，`roleCodes` 为辅助
+- 路由元信息中使用 `meta.menus` 与 `meta.roles` 做双重约束
+- 左侧菜单显示与路由可访问性保持同一套判断逻辑
+- 401 统一清理会话后跳回登录页
 
-```mermaid
-sequenceDiagram
-    participant U as 用户
-    participant L as login/index.vue
-    participant S as session.js
-    participant A as auth/system API
-    participant R as request.js
-    participant B as 后端 /system/login + /system/me
+### 3.3 项目管理与审批
+- 项目管理页负责分页、筛选、增删改、提交审批
+- 审批页负责待办、已办与审批动作
+- 页面层尽量不直接拼装请求参数，由 `utils/*-models.js` 统一转换
 
-    U->>L: 输入用户名密码
-    L->>S: login(loginForm)
-    S->>A: 调用登录接口
-    A->>R: 发送请求
-    R->>B: POST /api/system/login
-    B-->>R: tokenValue + userInfo + roleCodes + menuKeys
-    R-->>S: 统一响应
-    S->>S: 计算 homePath / 缓存 token
-    S-->>L: 登录完成
-    L->>L: 跳转到 homePath
-```
+### 3.4 首页地图下钻
+- 地图当前主线为：省 -> 市 -> 县 -> 项目
+- 省级、市级优先走摘要接口 `/project/map/summary`
+- 县级走点位接口 `/project/map/list`
+- 地图资源按层级懒加载，避免首屏一次性拉取全部 GeoJSON
 
-### 项目管理链路
+## 4. 前端目录职责
+### `src/api`
+- 对后端接口进行轻量封装
+- 不承载复杂页面逻辑
+- 统一复用 `request.js`
 
-```mermaid
-sequenceDiagram
-    participant P as manage.vue
-    participant M as project-models.js
-    participant API as api/project.js
-    participant R as request.js
-    participant B as 后端项目接口
+### `src/stores`
+- 管理登录态、当前用户、角色、菜单权限、默认首页
+- 为路由守卫和布局菜单提供稳定数据来源
 
-    P->>M: buildProjectPageParams(queryForm, pagination)
-    M-->>P: 规范化查询参数
-    P->>API: fetchProjectPageByForm(...)
-    API->>R: GET /project/page
-    R->>B: 请求
-    B-->>R: ProjectPageVO 分页结果
-    R-->>P: records/total
+### `src/utils`
+- `request.js`：鉴权、统一响应解析、错误收口、慢请求日志
+- `logger.js`：运行时日志、脱敏、浏览器缓冲、用户动作记录
+- `trace.js`：生成与透传 `traceId`
+- `route-progress.js`：路由切换进度条与慢路由告警
+- `project-models.js` 等：页面模型与接口模型适配
+- `map-drilldown.js`：地图资源加载、区域匹配、下钻辅助
 
-    P->>API: saveProjectForm(form)
-    API->>M: buildProjectSavePayload(form)
-    API->>R: POST /project/add 或 PUT /project/update
-    R->>B: 请求
-    B-->>R: 中文 msg
-    R-->>P: 成功响应
-```
+### `src/views`
+- 以页面职责为边界组织业务
+- 尽量把通用逻辑下沉到 `api`、`stores`、`utils`
+- 复杂弹窗与表单逻辑优先做数据结构标准化后再渲染
 
-### 审批中心链路
+## 5. 当前性能策略
+- Element Plus 已按需引入
+- Vue、路由、Pinia、Axios、Element Plus、ECharts 做了基础拆包
+- 高频分页与地图接口支持取消同类旧请求
+- 首页地图按层级与视图状态加载，避免无意义重复请求
 
-```mermaid
-sequenceDiagram
-    participant V as engineering.vue
-    participant FM as flow-models.js
-    participant API as api/flow.js
-    participant R as request.js
-    participant B as 后端 flow 接口
-
-    V->>API: fetchTodoPage(pagination.todo)
-    API->>FM: buildFlowPageParams(...)
-    API->>R: GET /flow/todo
-    R->>B: 请求
-    B-->>R: FlowTaskVO 分页结果
-    R-->>V: 待办列表
-
-    V->>API: approveTaskDecision(taskId, approved)
-    API->>FM: buildFlowApprovalPayload(...)
-    API->>R: POST /flow/approve
-    R->>B: 请求
-    B-->>R: 中文审批结果
-    R-->>V: 刷新当前 tab
-```
-
-## 5. 当前前端的关键约束
-
-- 权限来源以 `menuKeys` 为主，角色码只作为补充判断。
-- 登录后直接按 `homePath` 落到可访问首页，不再固定先跳 `/dashboard`。
-- 页面层尽量不直接拼 payload，而是通过 `api/*.js + utils/*-models.js` 统一收口。
-- 所有接口消息由 `request.js + feedback.js` 统一处理中文提示。
-- 地图页是唯一引入 ECharts 的核心页面，非地图页面通过 chunk 切分避免额外运行时负担。
+## 6. 当前风险与后续方向
+- 地图资源体积仍是首页性能的主要影响项，需要继续分层治理与资源精简
+- 菜单权限与默认首页的联动必须持续回归，避免出现“菜单存在但点击回首页”的问题
+- 前端监控链路已具备基础能力，后续可继续接入更细的页面性能指标

@@ -13,6 +13,18 @@ test('审批中心应按 tab 懒加载待办和已办数据', async ({ page }) =
   let todoCount = 0
   let doneCount = 0
 
+  await page.route('**/api/system/frontend-monitor/report', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        code: 200,
+        msg: '操作成功',
+        data: true
+      })
+    })
+  })
+
   await page.addInitScript(() => {
     window.localStorage.setItem('token', 'token-e2e')
     window.localStorage.setItem(

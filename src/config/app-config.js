@@ -6,10 +6,10 @@ const slowInitialRouteThreshold = Number(
 )
 
 /**
- * 职责：集中管理前端运行时配置。
- * 为什么存在：避免页面和工具层散落硬编码，方便运维按环境覆盖。
- * 关键输入输出：输入为 Vite 环境变量，输出为统一配置对象。
- * 关联链路：request、logger、构建脚本。
+ * 统一管理前端运行时配置。
+ * 存在原因：避免页面和工具层散落读取环境变量，方便后续统一收口与排查。
+ * 输入输出：输入为 Vite 环境变量，输出为前端统一配置对象。
+ * 关联链路：request、logger、route-progress、监控与日志脚本。
  */
 export const appConfig = {
   appName: import.meta.env.VITE_APP_NAME || 'gov-web',

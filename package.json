@@ -7,10 +7,13 @@
     "dev": "powershell -ExecutionPolicy Bypass -File ./scripts/run-with-env-log.ps1 -Mode dev",
     "build": "powershell -ExecutionPolicy Bypass -File ./scripts/run-with-env-log.ps1 -Mode build",
     "build:log": "powershell -ExecutionPolicy Bypass -File ./scripts/run-with-env-log.ps1 -Mode build -ForceLog",
+    "build:stats": "powershell -ExecutionPolicy Bypass -File ./scripts/report-build-stats.ps1 -Build",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
+    "test:smoke": "playwright test tests/e2e/login.spec.js tests/e2e/dashboard.spec.js tests/e2e/engineering.spec.js",
+    "map:split": "python scripts/split-map-geojson.py",
     "dev:log": "powershell -ExecutionPolicy Bypass -File ./scripts/run-with-env-log.ps1 -Mode dev -ForceLog",
     "logs:clean": "powershell -ExecutionPolicy Bypass -File ./scripts/clean-logs.ps1 -KeepDays 7"
   },

@@ -25,4 +25,4 @@ if ($totalSize) {
     }
 }
 
-Write-Output ("Cleaned frontend logs with keepDays={0}, totalSizeCapMb={1}." -f $KeepDays, $TotalSizeCapMb)
+Write-Output ("前端日志清理完成，保留天数={0}，目录总量上限={1}MB。" -f $KeepDays, $TotalSizeCapMb)
