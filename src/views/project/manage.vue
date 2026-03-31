@@ -1030,6 +1030,12 @@ async function handleAttachmentUpload(uploadRequest) {
     return
   }
 
+  if (Number(uploadRequest.file.size || 0) > MAX_ATTACHMENT_SIZE_BYTES) {
+    showWarning(`鍗曚釜闄勪欢涓嶈兘瓒呰繃 ${MAX_ATTACHMENT_SIZE_LABEL}`)
+    uploadRequest.onError?.(new Error(`file_too_large_${MAX_ATTACHMENT_SIZE_LABEL}`))
+    return
+  }
+
   editDialog.uploadingCount += 1
   const task = createUploadTask(uploadRequest)
   uploadQueue.value = [...uploadQueue.value, task]
