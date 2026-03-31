@@ -64,6 +64,24 @@ function normalizeCoordinate(value) {
   return Number.isFinite(numeric) ? numeric : null
 }
 
+export function normalizeAttachmentAccessUrl(value) {
+  const rawUrl = String(value || '').trim()
+  if (!rawUrl) return ''
+  if (typeof window === 'undefined' || typeof URL === 'undefined') {
+    return rawUrl
+  }
+
+  try {
+    const resolvedUrl = new URL(rawUrl, window.location.origin)
+    if (!resolvedUrl.pathname.startsWith('/minio/')) {
+      return resolvedUrl.toString()
+    }
+    return `${window.location.origin}${resolvedUrl.pathname}${resolvedUrl.search}${resolvedUrl.hash}`
+  } catch (error) {
+    return rawUrl
+  }
+}
+
 /**
  * 将单个附件结构规整为页面内部统一模型。
  *
@@ -81,7 +99,7 @@ function normalizeProjectAttachment(file) {
     fileType: String(file?.fileType || ''),
     fileSize: Number.isFinite(numericSize) ? numericSize : 0,
     isImage: Boolean(file?.isImage ?? file?.image),
-    accessUrl: String(file?.accessUrl || '')
+    accessUrl: normalizeAttachmentAccessUrl(file?.accessUrl)
   }
 }
 

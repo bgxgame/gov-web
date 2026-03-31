@@ -404,7 +404,7 @@ import { useSessionStore } from '../../stores/session'
 import { useActivatedRefresh } from '../../utils/activated-refresh'
 import { confirmAction, handleActionError, showError, showSuccess, showWarning } from '../../utils/feedback'
 import { nowMs, reportPerfDuration } from '../../utils/perf-metrics'
-import { createEmptyProjectForm, normalizeProjectForm } from '../../utils/project-models'
+import { createEmptyProjectForm, normalizeAttachmentAccessUrl, normalizeProjectForm } from '../../utils/project-models'
 import { PROVINCE_OPTIONS, appendMissingOption, getCityOptions, getDistrictOptions, hasCity, hasDistrict } from '../../utils/region-options'
 
 // 项目管理页：负责项目分页、编辑、详情、删除、提交审批和附件上传。
@@ -471,6 +471,8 @@ const rowActionLoading = reactive({
 
 const CONTACT_PHONE_REGEX = /^[0-9-]{7,20}$/
 const UPLOAD_CONCURRENCY_LIMIT = 2
+const MAX_ATTACHMENT_SIZE_BYTES = 100 * 1024 * 1024
+const MAX_ATTACHMENT_SIZE_LABEL = '100MB'
 const provinceOptions = PROVINCE_OPTIONS
 const queryCityOptions = computed(() => getCityOptions(queryForm.province))
 const queryDistrictOptions = computed(() => getDistrictOptions(queryForm.province, queryForm.city))
@@ -518,7 +520,7 @@ function normalizeAttachment(file) {
     fileType: String(file.fileType || ''),
     fileSize: Number.isFinite(numericSize) ? numericSize : 0,
     isImage: Boolean(file.isImage ?? file.image),
-    accessUrl: String(file.accessUrl || '')
+    accessUrl: normalizeAttachmentAccessUrl(file.accessUrl)
   }
 }
 
