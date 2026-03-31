@@ -39,10 +39,14 @@
 <script setup>
 import { reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { useSessionStore } from '../../stores/session'
+import { resolveFirstEnabledMenuPath, useSessionStore } from '../../stores/session'
 import { getErrorMessage, showSuccess } from '../../utils/feedback'
 
-// 职责：收集登录凭证并在成功后落到当前账号可访问的默认首页。
+/**
+ * 职责：收集登录凭证，并在成功后跳转到当前账号可访问的默认首页。
+ * 为什么存在：登录页是会话建立的起点，需要统一处理校验、提交态和登录后的去向。
+ * 关联链路：登录 -> 建立会话 -> 解析默认首页 -> 进入系统。
+ */
 const router = useRouter()
 const sessionStore = useSessionStore()
 const submitting = ref(false)
@@ -61,7 +65,9 @@ watch(
   }
 )
 
-// 为什么存在：统一处理登录前校验、重复点击保护和登录成功后的跳转反馈。
+/**
+ * 作用：统一处理登录前校验、重复点击保护和成功后的跳转反馈。
+ */
 const handleLogin = async () => {
   if (submitting.value) return
   if (!String(loginForm.username || '').trim()) {
@@ -78,7 +84,7 @@ const handleLogin = async () => {
   try {
     await sessionStore.login(loginForm)
     showSuccess('登录成功')
-    await router.replace(sessionStore.homePath || '/dashboard')
+    await router.replace(sessionStore.homePath || resolveFirstEnabledMenuPath() || '/login')
   } catch (error) {
     authErrorMessage.value = getErrorMessage(error, '登录失败，请稍后重试')
   } finally {

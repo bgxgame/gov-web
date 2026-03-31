@@ -12,6 +12,9 @@ const replace = vi.fn()
 const login = vi.fn()
 const showSuccess = vi.fn()
 const getErrorMessage = vi.fn((error) => error?.msg || error?.message || '登录失败')
+const sessionState = {
+  homePath: '/project/manage'
+}
 
 vi.mock('vue-router', () => ({
   useRouter: () => ({ replace })
@@ -20,8 +23,9 @@ vi.mock('vue-router', () => ({
 vi.mock('../../src/stores/session', () => ({
   useSessionStore: () => ({
     login,
-    homePath: '/project/manage'
-  })
+    homePath: sessionState.homePath
+  }),
+  resolveFirstEnabledMenuPath: () => '/system/user'
 }))
 
 vi.mock('../../src/utils/feedback', () => ({
@@ -54,6 +58,7 @@ describe('login view', () => {
     showSuccess.mockReset()
     getErrorMessage.mockReset()
     getErrorMessage.mockImplementation((error) => error?.msg || error?.message || '登录失败')
+    sessionState.homePath = '/project/manage'
   })
 
   /**
@@ -78,6 +83,29 @@ describe('login view', () => {
     expect(login).toHaveBeenCalledWith({ username: 'admin', password: 'secret' })
     expect(showSuccess).toHaveBeenCalled()
     expect(replace).toHaveBeenCalledWith('/project/manage')
+  })
+
+  /**
+   * 作用：验证会话层当前没有默认首页时，登录页会退回到环境开关允许的首个菜单入口。
+   */
+  it('should fall back to the first enabled menu path when home path is empty', async () => {
+    sessionState.homePath = ''
+    login.mockResolvedValue({ data: { tokenValue: 'token-2' } })
+
+    const LoginView = (await import('../../src/views/login/index.vue')).default
+    const wrapper = mount(LoginView, {
+      global: {
+        stubs: globalStubs
+      }
+    })
+
+    const inputs = wrapper.findAll('input')
+    await inputs[0].setValue('admin')
+    await inputs[1].setValue('secret')
+    await wrapper.find('form').trigger('submit')
+    await nextTick()
+
+    expect(replace).toHaveBeenCalledWith('/system/user')
   })
 
   /**

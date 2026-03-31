@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { getCurrentUser, login as loginApi, logout as logoutApi } from '../api/auth'
+import { filterEnabledMenuKeys, isMenuEnabled } from '../utils/menu-feature'
 
 const USER_KEY = 'user_info'
 
@@ -15,8 +16,12 @@ export const MENU_ROUTE_PRIORITY = [
 ]
 
 export function resolveHomePathByMenuKeys(menuKeys) {
-  const normalizedMenus = normalizeMenuKeys(menuKeys)
+  const normalizedMenus = filterEnabledMenuKeys(menuKeys)
   return MENU_ROUTE_PRIORITY.find((item) => normalizedMenus.includes(item.menu))?.path || null
+}
+
+export function resolveFirstEnabledMenuPath() {
+  return MENU_ROUTE_PRIORITY.find((item) => isMenuEnabled(item.menu))?.path || null
 }
 
 export function resolveHomePathFromCachedUserInfo() {
@@ -69,7 +74,7 @@ function normalizeRoleCodes(roleCodes) {
  */
 function normalizeMenuKeys(menuKeys) {
   if (!Array.isArray(menuKeys)) return []
-  return [...new Set(menuKeys.map((item) => String(item || '').trim()).filter(Boolean))]
+  return filterEnabledMenuKeys(menuKeys.map((item) => String(item || '').trim()).filter(Boolean))
 }
 
 /**
@@ -307,7 +312,7 @@ export const useSessionStore = defineStore('session', {
      */
     hasMenu(menuKey) {
       const menus = this.userInfo?.menuKeys || []
-      return menus.includes(menuKey)
+      return isMenuEnabled(menuKey) && menus.includes(menuKey)
     },
 
     /**
@@ -318,7 +323,9 @@ export const useSessionStore = defineStore('session', {
      */
     hasAnyMenu(menuKeys) {
       const menus = this.userInfo?.menuKeys || []
-      return (menuKeys || []).some((key) => menus.includes(key))
+      const enabledMenuKeys = filterEnabledMenuKeys(menuKeys)
+      if (enabledMenuKeys.length === 0) return false
+      return enabledMenuKeys.some((key) => menus.includes(key))
     },
 
     /**

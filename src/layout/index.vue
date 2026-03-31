@@ -1,6 +1,6 @@
 <template>
-    <el-container class="layout-shell">
-      <el-aside :width="isCollapse ? '64px' : '220px'" class="aside-container">
+  <el-container class="layout-shell">
+    <el-aside :width="isCollapse ? '64px' : '220px'" class="aside-container">
       <div class="aside-content">
         <div class="aside-logo">
           <span v-if="!isCollapse" class="logo-title">信创政务管理系统</span>
@@ -32,7 +32,7 @@
               <span>项目管理</span>
             </template>
             <el-menu-item v-if="canVisitMenu('project:manage')" index="/project/manage">项目管理</el-menu-item>
-            <el-menu-item v-if="canVisitMenu('project:engineering')" index="/project/engineering">工程进度</el-menu-item>
+            <el-menu-item v-if="canVisitMenu('project:engineering')" index="/project/engineering">审批待办</el-menu-item>
           </el-sub-menu>
 
           <el-sub-menu v-if="hasSystemMenus" index="settings">
@@ -95,7 +95,7 @@
     <div class="logout-tip">确认退出当前账号吗？</div>
     <template #footer>
       <el-button @click="logoutDialogVisible = false">取消</el-button>
-      <el-button type="primary" @click="confirmLogout">确定退出</el-button>
+      <el-button type="primary" @click="confirmLogout">确认退出</el-button>
     </template>
   </el-dialog>
 </template>
@@ -113,7 +113,7 @@ import { CACHEABLE_VIEW_NAMES, shouldKeepAliveRoute } from '../utils/router-cach
 
 /**
  * 职责：承载系统主布局，统一处理侧边菜单、页面缓存和退出登录交互。
- * 为什么存在：避免每个业务页重复维护菜单权限、布局结构和会话操作入口。
+ * 为什么存在：避免每个业务页面重复维护菜单权限、布局结构和会话入口。
  * 关键输入输出：输入为当前路由、当前用户菜单权限和缓存策略；输出为侧边导航与主内容区。
  * 关联链路：登录成功 -> 主布局 -> 菜单切换 -> 页面缓存复用。
  */
@@ -211,7 +211,7 @@ function handleLogout() {
 }
 
 /**
- * 作用：退出时清理本地会话并使用 replace 回到登录页，避免后退回到受保护页面。
+ * 作用：退出时清理本地会话，并使用 replace 回到登录页，避免后退回到受保护页面。
  */
 async function confirmLogout() {
   logUserAction('logout_confirm', {

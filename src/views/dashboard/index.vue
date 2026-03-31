@@ -361,6 +361,7 @@ async function ensureEchartsReady() {
       core.use([
         components.GeoComponent,
         components.TooltipComponent,
+        components.VisualMapComponent,
         charts.MapChart,
         charts.EffectScatterChart,
         renderers.CanvasRenderer

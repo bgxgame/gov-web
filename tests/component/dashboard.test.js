@@ -56,7 +56,8 @@ vi.mock('echarts/core', () => ({
 
 vi.mock('echarts/components', () => ({
   GeoComponent: {},
-  TooltipComponent: {}
+  TooltipComponent: {},
+  VisualMapComponent: {}
 }))
 
 vi.mock('echarts/charts', () => ({

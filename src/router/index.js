@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { resolveHomePathFromCachedUserInfo, useSessionStore } from '../stores/session'
+import { resolveFirstEnabledMenuPath, resolveHomePathFromCachedUserInfo, useSessionStore } from '../stores/session'
 import { appConfig } from '../config/app-config'
+import { filterEnabledMenuKeys } from '../utils/menu-feature'
 import { showError } from '../utils/feedback'
 import { logUserAction, logger } from '../utils/logger'
 import { nowMs, reportPerfAction } from '../utils/perf-metrics'
@@ -47,7 +48,7 @@ const routes = [
         name: 'EngineeringManage',
         component: () => import('../views/project/engineering.vue'),
         meta: {
-          title: '工程进度',
+          title: '审批待办',
           icon: 'Management',
           roles: ['admin', 'dept_leader'],
           menus: ['project:engineering'],
@@ -127,27 +128,30 @@ let currentRouteProgressToken = 0
 let currentRouteGuardMetrics = null
 
 function resolveHomePath(sessionStore) {
-  return sessionStore.homePath && sessionStore.homePath !== '/login' ? sessionStore.homePath : '/dashboard'
+  if (sessionStore.homePath && sessionStore.homePath !== '/login') {
+    return sessionStore.homePath
+  }
+  return resolveFirstEnabledMenuPath() || '/login'
 }
 
 function resolveProtectedEntryPath() {
-  if (typeof window === 'undefined') return '/dashboard'
+  if (typeof window === 'undefined') return resolveFirstEnabledMenuPath() || '/login'
   const token = localStorage.getItem('token')
   if (!token) return '/login'
-  return resolveHomePathFromCachedUserInfo() || '/dashboard'
+  return resolveHomePathFromCachedUserInfo() || resolveFirstEnabledMenuPath() || '/login'
 }
 
 function resolveDeniedNavigationTarget(to, from, sessionStore) {
   if (from?.path && from.path !== to.path) {
     return false
   }
-  const homePath = sessionStore.homePath
+  const homePath = resolveHomePath(sessionStore)
   return homePath && homePath !== to.path ? homePath : false
 }
 
 function shouldReuseCachedUserInfo(sessionStore, to) {
   if (!sessionStore.userInfo || sessionStore.userInfoSource !== 'cache') return false
-  const requiredMenus = to.meta?.menus || []
+  const requiredMenus = filterEnabledMenuKeys(to.meta?.menus || [])
   if (requiredMenus.length > 0) {
     return sessionStore.hasAnyMenu(requiredMenus)
   }
@@ -217,6 +221,20 @@ router.beforeEach(async (to, from, next) => {
     return
   }
 
+  const requiredMenus = to.meta?.menus || []
+  const enabledRequiredMenus = filterEnabledMenuKeys(requiredMenus)
+  if (requiredMenus.length > 0 && enabledRequiredMenus.length === 0) {
+    guardMetrics.decision = 'redirect_feature_disabled'
+    logger.info('目标页面在当前环境已关闭', {
+      fromPath: from.path,
+      toPath: to.path,
+      requiredMenus
+    })
+    showError('当前环境未启用该功能')
+    next(resolveDeniedNavigationTarget(to, from, sessionStore))
+    return
+  }
+
   try {
     if (!shouldReuseCachedUserInfo(sessionStore, to)) {
       const ensureStartAt = nowMs()
@@ -235,8 +253,7 @@ router.beforeEach(async (to, from, next) => {
     return
   }
 
-  const requiredMenus = to.meta?.menus || []
-  if (requiredMenus.length > 0 && !sessionStore.hasAnyMenu(requiredMenus)) {
+  if (enabledRequiredMenus.length > 0 && !sessionStore.hasAnyMenu(enabledRequiredMenus)) {
     if (sessionStore.userInfoSource === 'cache') {
       try {
         const refreshStartAt = nowMs()
@@ -255,12 +272,12 @@ router.beforeEach(async (to, from, next) => {
       }
     }
 
-    if (!sessionStore.hasAnyMenu(requiredMenus)) {
+    if (!sessionStore.hasAnyMenu(enabledRequiredMenus)) {
       guardMetrics.decision = 'redirect_permission_denied'
       logger.warn('用户访问了无权限页面，已阻止跳转', {
         fromPath: from.path,
         toPath: to.path,
-        requiredMenus,
+        requiredMenus: enabledRequiredMenus,
         homePath: sessionStore.homePath
       })
       showError('当前账号暂无权限访问该页面')
@@ -270,10 +287,10 @@ router.beforeEach(async (to, from, next) => {
   }
 
   const requiredRoles = to.meta?.roles || []
-  const hasMenuGate = requiredMenus.length > 0
+  const hasMenuGate = enabledRequiredMenus.length > 0
   if (!hasMenuGate && requiredRoles.length > 0 && !sessionStore.hasAnyRole(requiredRoles)) {
-    const homePath = sessionStore.homePath
-    if (!homePath) {
+    const homePath = resolveHomePath(sessionStore)
+    if (!homePath || homePath === '/login') {
       guardMetrics.decision = 'role_denied_logout'
       logger.warn('用户角色不满足页面要求且没有可用首页，已回到登录页', {
         fromPath: from.path,

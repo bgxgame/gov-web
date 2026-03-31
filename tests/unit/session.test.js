@@ -20,6 +20,8 @@ vi.mock('../../src/api/auth', () => ({
 describe('session store', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.resetModules()
+    vi.unstubAllEnvs()
     window.localStorage.clear()
     setActivePinia(createPinia())
   })
@@ -100,5 +102,22 @@ describe('session store', () => {
     const { resolveHomePathFromCachedUserInfo } = await import('../../src/stores/session')
 
     expect(resolveHomePathFromCachedUserInfo()).toBe('/project/manage')
+  })
+
+  /**
+   * 作用：验证环境隐藏菜单后，默认首页会自动跳过被关闭的入口。
+   */
+  it('should skip hidden menus when resolving home path', async () => {
+    vi.stubEnv('VITE_APP_HIDDEN_MENUS', 'dashboard:view,system:user')
+    window.localStorage.setItem('user_info', JSON.stringify({ menuKeys: ['dashboard:view', 'project:manage', 'system:user'] }))
+
+    const { resolveFirstEnabledMenuPath, resolveHomePathFromCachedUserInfo, useSessionStore } = await import('../../src/stores/session')
+    const store = useSessionStore()
+
+    expect(resolveFirstEnabledMenuPath()).toBe('/project/manage')
+    expect(resolveHomePathFromCachedUserInfo()).toBe('/project/manage')
+    expect(store.homePath).toBe('/project/manage')
+    expect(store.hasMenu('dashboard:view')).toBe(false)
+    expect(store.hasMenu('project:manage')).toBe(true)
   })
 })
