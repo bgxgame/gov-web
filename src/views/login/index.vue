@@ -1,7 +1,7 @@
 <template>
   <div class="login-container">
     <el-card class="login-card">
-      <h2>信创政务管理系统</h2>
+      <h2>项管平台</h2>
       <el-form :model="loginForm" @submit.prevent="handleLogin">
         <el-form-item>
           <el-input

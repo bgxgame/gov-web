@@ -44,4 +44,35 @@ describe('project api', () => {
       })
     )
   })
+
+  it('should upload project attachments with multipart form data', async () => {
+    requestPost.mockResolvedValue({ data: { id: 1 } })
+
+    const { uploadProjectAttachment } = await import('../../src/api/project')
+    const file = new File(['demo'], 'demo.txt', { type: 'text/plain' })
+
+    await uploadProjectAttachment(file)
+
+    expect(requestPost).toHaveBeenCalledWith(
+      '/project/file/upload',
+      expect.any(FormData),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          'Content-Type': 'multipart/form-data'
+        })
+      })
+    )
+  })
+
+  it('should cleanup temporary project attachments by id list', async () => {
+    requestPost.mockResolvedValue({ msg: '已清理1个临时附件' })
+
+    const { cleanupProjectTempAttachments } = await import('../../src/api/project')
+
+    await cleanupProjectTempAttachments([11, 12])
+
+    expect(requestPost).toHaveBeenCalledWith('/project/file/cleanup-temp', {
+      fileIds: [11, 12]
+    })
+  })
 })

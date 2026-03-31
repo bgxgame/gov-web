@@ -27,6 +27,17 @@
  * @property {string} description
  * @property {number} status
  * @property {string|number|undefined} creatorDeptId
+ * @property {ProjectAttachmentModel[]} attachments
+ */
+
+/**
+ * @typedef {Object} ProjectAttachmentModel
+ * @property {string|number|undefined} id
+ * @property {string} fileName
+ * @property {string} fileType
+ * @property {number} fileSize
+ * @property {boolean} isImage
+ * @property {string} accessUrl
  */
 
 /**
@@ -54,6 +65,38 @@ function normalizeCoordinate(value) {
 }
 
 /**
+ * 将单个附件结构规整为页面内部统一模型。
+ *
+ * @param {Record<string, unknown>|null|undefined} file
+ * @returns {ProjectAttachmentModel|null}
+ */
+function normalizeProjectAttachment(file) {
+  const rawId = file?.id
+  if (rawId === undefined || rawId === null || rawId === '') return null
+
+  const numericSize = Number(file?.fileSize ?? 0)
+  return {
+    id: rawId,
+    fileName: String(file?.fileName || '未命名附件'),
+    fileType: String(file?.fileType || ''),
+    fileSize: Number.isFinite(numericSize) ? numericSize : 0,
+    isImage: Boolean(file?.isImage ?? file?.image),
+    accessUrl: String(file?.accessUrl || '')
+  }
+}
+
+/**
+ * 统一规整附件列表，顺带过滤空项。
+ *
+ * @param {unknown[]} files
+ * @returns {ProjectAttachmentModel[]}
+ */
+function normalizeProjectAttachmentList(files) {
+  if (!Array.isArray(files)) return []
+  return files.map((item) => normalizeProjectAttachment(item)).filter(Boolean)
+}
+
+/**
  * 创建页面使用的默认项目表单结构。
  *
  * @returns {ProjectFormModel}
@@ -74,7 +117,8 @@ export function createEmptyProjectForm() {
     leaderPhone: '',
     description: '',
     status: 0,
-    creatorDeptId: undefined
+    creatorDeptId: undefined,
+    attachments: []
   }
 }
 
@@ -110,7 +154,8 @@ export function normalizeProjectForm(project, userOptions = []) {
     leaderPhone: project.leaderPhone || '',
     description: project.description || '',
     status: project.status ?? 0,
-    creatorDeptId: project.creatorDeptId
+    creatorDeptId: project.creatorDeptId,
+    attachments: normalizeProjectAttachmentList(project.attachments)
   }
 }
 
@@ -187,7 +232,8 @@ export function buildProjectSavePayload(form) {
     leaderPhone: normalizeOptionalText(form.leaderPhone),
     description: normalizeOptionalText(form.description),
     status: form.status,
-    creatorDeptId: form.creatorDeptId
+    creatorDeptId: form.creatorDeptId,
+    attachments: normalizeProjectAttachmentList(form.attachments).map((item) => ({ id: item.id }))
   }
   if (form.id !== undefined && form.id !== null && form.id !== '') {
     payload.id = form.id

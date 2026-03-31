@@ -26,7 +26,8 @@ describe('project-models', () => {
       leaderPhone: '',
       description: '',
       status: 0,
-      creatorDeptId: undefined
+      creatorDeptId: undefined,
+      attachments: []
     })
   })
 
@@ -38,7 +39,17 @@ describe('project-models', () => {
         leaderName: '李工',
         leaderPhone: '13800000000',
         longitude: 108.95,
-        status: 3
+        status: 3,
+        attachments: [
+          {
+            id: 21,
+            fileName: '现场照片.png',
+            fileType: 'image/png',
+            fileSize: 2048,
+            image: true,
+            accessUrl: 'https://example.com/1.png'
+          }
+        ]
       },
       [{ id: 3, realName: '李工', phone: '13800000000' }]
     )
@@ -47,6 +58,16 @@ describe('project-models', () => {
     expect(form.leaderUserId).toBe(3)
     expect(form.longitude).toBe(108.95)
     expect(form.status).toBe(3)
+    expect(form.attachments).toEqual([
+      {
+        id: 21,
+        fileName: '现场照片.png',
+        fileType: 'image/png',
+        fileSize: 2048,
+        isImage: true,
+        accessUrl: 'https://example.com/1.png'
+      }
+    ])
   })
 
   it('should build create payload without meaningless blank fields', () => {
@@ -74,7 +95,8 @@ describe('project-models', () => {
       leaderPhone: undefined,
       description: undefined,
       status: 0,
-      creatorDeptId: undefined
+      creatorDeptId: undefined,
+      attachments: []
     })
   })
 
@@ -82,11 +104,22 @@ describe('project-models', () => {
     const payload = buildProjectSavePayload({
       ...createEmptyProjectForm(),
       id: '12',
-      projectName: '更新项目'
+      projectName: '更新项目',
+      attachments: [
+        {
+          id: 9,
+          fileName: '方案.pdf',
+          fileType: 'application/pdf',
+          fileSize: 1024,
+          isImage: false,
+          accessUrl: 'https://example.com/plan.pdf'
+        }
+      ]
     })
 
     expect(payload.id).toBe('12')
     expect(payload.projectName).toBe('更新项目')
+    expect(payload.attachments).toEqual([{ id: 9 }])
   })
 
   it('should build page and map query params with trimmed values', () => {

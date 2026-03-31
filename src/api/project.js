@@ -15,10 +15,21 @@ import {
 
 const projectDetailCache = new Map()
 const projectDetailPromiseCache = new Map()
+const PROJECT_DETAIL_CACHE_TTL = 5 * 60 * 1000
 
 function normalizeProjectId(id) {
   const value = String(id || '').trim()
   return value || ''
+}
+
+function getCachedProjectDetail(projectId) {
+  const cachedEntry = projectDetailCache.get(projectId)
+  if (!cachedEntry) return null
+  if (Date.now() - cachedEntry.cachedAt > PROJECT_DETAIL_CACHE_TTL) {
+    projectDetailCache.delete(projectId)
+    return null
+  }
+  return cachedEntry.response
 }
 
 function invalidateProjectDetailCache(...ids) {
@@ -48,8 +59,11 @@ export const getProjectDetail = (id, config = {}) => {
   }
 
   const { forceRefresh = false, ...requestConfig } = config
-  if (!forceRefresh && projectDetailCache.has(projectId)) {
-    return Promise.resolve(projectDetailCache.get(projectId))
+  if (!forceRefresh) {
+    const cachedResponse = getCachedProjectDetail(projectId)
+    if (cachedResponse) {
+      return Promise.resolve(cachedResponse)
+    }
   }
   if (!forceRefresh && projectDetailPromiseCache.has(projectId)) {
     return projectDetailPromiseCache.get(projectId)
@@ -61,7 +75,10 @@ export const getProjectDetail = (id, config = {}) => {
       ...requestConfig
     })
     .then((response) => {
-      projectDetailCache.set(projectId, response)
+      projectDetailCache.set(projectId, {
+        response,
+        cachedAt: Date.now()
+      })
       return response
     })
     .finally(() => {
@@ -73,6 +90,29 @@ export const getProjectDetail = (id, config = {}) => {
 }
 
 export const addProject = (payload) => request.post('/project/add', payload)
+
+export const uploadProjectAttachment = (file, options = {}) => {
+  const { onProgress } = options
+  const formData = new FormData()
+  formData.append('file', file)
+  return request.post('/project/file/upload', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    },
+    onUploadProgress: typeof onProgress === 'function'
+      ? (event) => {
+          if (!event?.total) return
+          const percent = Math.min(100, Math.round((event.loaded / event.total) * 100))
+          onProgress(percent, event)
+        }
+      : undefined
+  })
+}
+
+export const cleanupProjectTempAttachments = (fileIds) =>
+  request.post('/project/file/cleanup-temp', {
+    fileIds: Array.isArray(fileIds) ? fileIds : []
+  })
 
 export const updateProject = (payload) =>
   request.put('/project/update', payload).then((response) => {

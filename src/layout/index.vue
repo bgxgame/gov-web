@@ -3,7 +3,7 @@
     <el-aside :width="isCollapse ? '64px' : '220px'" class="aside-container">
       <div class="aside-content">
         <div class="aside-logo">
-          <span v-if="!isCollapse" class="logo-title">信创政务管理系统</span>
+          <span v-if="!isCollapse" class="logo-title">项管平台</span>
           <el-icon class="toggle-icon" @click="isCollapse = !isCollapse">
             <Expand v-if="isCollapse" />
             <Fold v-else />
@@ -51,8 +51,8 @@
         <div class="aside-footer">
           <el-dropdown trigger="click" placement="right-end">
             <div class="user-profile-trigger">
-              <el-avatar :size="32" icon="UserFilled" />
               <span v-if="!isCollapse" class="username">{{ displayName }}</span>
+              <el-icon class="user-profile-arrow"><ArrowDown /></el-icon>
             </div>
             <template #dropdown>
               <el-dropdown-menu>
@@ -103,7 +103,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Expand, Fold, HomeFilled, Management, Setting, SwitchButton } from '@element-plus/icons-vue'
+import { ArrowDown, Expand, Fold, HomeFilled, Management, Setting, SwitchButton } from '@element-plus/icons-vue'
 import { useSessionStore } from '../stores/session'
 import { showSuccess } from '../utils/feedback'
 import { logUserAction, logger } from '../utils/logger'
@@ -293,6 +293,7 @@ async function confirmLogout() {
   display: flex;
   align-items: center;
   padding: 5px 15px;
+  gap: 8px;
   cursor: pointer;
   color: #fff;
   border-radius: 4px;
@@ -304,8 +305,11 @@ async function confirmLogout() {
 }
 
 .username {
-  margin-left: 10px;
   font-size: 14px;
+}
+
+.user-profile-arrow {
+  font-size: 12px;
 }
 
 .main-container {

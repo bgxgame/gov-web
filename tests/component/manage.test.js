@@ -14,6 +14,8 @@ const getProjectDetail = vi.fn()
 const saveProjectForm = vi.fn()
 const submitProjectById = vi.fn()
 const deleteProject = vi.fn()
+const uploadProjectAttachment = vi.fn()
+const cleanupProjectTempAttachments = vi.fn()
 const confirmAction = vi.fn()
 const showError = vi.fn()
 const showSuccess = vi.fn()
@@ -38,7 +40,9 @@ vi.mock('../../src/api/project', () => ({
   getProjectDetail,
   saveProjectForm,
   submitProjectById,
-  deleteProject
+  deleteProject,
+  uploadProjectAttachment,
+  cleanupProjectTempAttachments
 }))
 
 vi.mock('../../src/stores/session', () => ({
@@ -84,7 +88,11 @@ const globalStubs = {
   ElCol: { template: '<div><slot /></div>' },
   ElTag: { template: '<span><slot /></span>' },
   ElDescriptions: { template: '<div><slot /></div>' },
-  ElDescriptionsItem: { template: '<div><slot /></div>' }
+  ElDescriptionsItem: { template: '<div><slot /></div>' },
+  ElUpload: { template: '<div><slot /></div>' },
+  ElIcon: { template: '<i><slot /></i>' },
+  ElImage: { props: ['src'], template: '<img :src="src" />' },
+  ElProgress: { props: ['percentage'], template: '<div>{{ percentage }}</div>' }
 }
 
 describe('项目管理页', () => {
@@ -206,5 +214,46 @@ describe('项目管理页', () => {
     expect(latestQueryForm.province).toBe('')
     expect(latestQueryForm.city).toBe('')
     expect(latestQueryForm.district).toBe('')
+  })
+
+  it('取消新增弹窗时应自动清理未绑定的临时附件', async () => {
+    fetchProjectPageByForm.mockResolvedValue({
+      data: { records: [], total: 0 }
+    })
+    uploadProjectAttachment.mockResolvedValue({
+      data: {
+        id: 88,
+        fileName: '方案说明.txt',
+        fileType: 'text/plain',
+        fileSize: 12,
+        isImage: false,
+        accessUrl: 'https://example.com/file.txt'
+      }
+    })
+    cleanupProjectTempAttachments.mockResolvedValue({ msg: '已清理1个临时附件' })
+
+    const ManageView = (await import('../../src/views/project/manage.vue')).default
+    const wrapper = mount(ManageView, {
+      global: {
+        stubs: globalStubs
+      }
+    })
+
+    await flushView()
+
+    await wrapper.vm.openCreateDialog()
+    await flushView()
+
+    await wrapper.vm.handleAttachmentUpload({
+      file: new File(['demo'], 'demo.txt', { type: 'text/plain' }),
+      onSuccess: vi.fn(),
+      onError: vi.fn()
+    })
+    await flushView()
+
+    wrapper.vm.handleCloseEditDialog()
+    await flushView()
+
+    expect(cleanupProjectTempAttachments).toHaveBeenCalledWith([88])
   })
 })
