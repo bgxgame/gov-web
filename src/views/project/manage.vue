@@ -404,7 +404,12 @@ import { useSessionStore } from '../../stores/session'
 import { useActivatedRefresh } from '../../utils/activated-refresh'
 import { confirmAction, handleActionError, showError, showSuccess, showWarning } from '../../utils/feedback'
 import { nowMs, reportPerfDuration } from '../../utils/perf-metrics'
-import { createEmptyProjectForm, normalizeAttachmentAccessUrl, normalizeProjectForm } from '../../utils/project-models'
+import {
+  createEmptyProjectForm,
+  normalizeAttachmentAccessUrl,
+  normalizeProjectForm,
+  validateProjectCoordinates
+} from '../../utils/project-models'
 import { PROVINCE_OPTIONS, appendMissingOption, getCityOptions, getDistrictOptions, hasCity, hasDistrict } from '../../utils/region-options'
 
 // 项目管理页：负责项目分页、编辑、详情、删除、提交审批和附件上传。
@@ -1087,6 +1092,11 @@ async function handleSave() {
   const leaderPhone = String(editDialog.form.leaderPhone || '').trim()
   if (leaderPhone && !CONTACT_PHONE_REGEX.test(leaderPhone)) {
     showWarning('联系电话格式不正确，请填写7到20位数字，可包含短横线')
+    return
+  }
+  const coordinateError = validateProjectCoordinates(editDialog.form)
+  if (coordinateError) {
+    showWarning(coordinateError)
     return
   }
 

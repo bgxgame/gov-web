@@ -59,9 +59,31 @@ function normalizeOptionalText(value) {
  * @returns {number|null}
  */
 function normalizeCoordinate(value) {
-  if (value === '' || value === null || value === undefined) return null
-  const numeric = Number(value)
+  const text = String(value ?? '').trim()
+  if (!text) return null
+  const numeric = Number(text)
   return Number.isFinite(numeric) ? numeric : null
+}
+
+function validateCoordinateValue(value, label, min, max) {
+  const text = String(value ?? '').trim()
+  if (!text) return null
+
+  const numeric = Number(text)
+  if (!Number.isFinite(numeric)) {
+    return `${label}必须是数字`
+  }
+  if (numeric < min || numeric > max) {
+    return `${label}范围应为 ${min} 到 ${max}`
+  }
+  return null
+}
+
+export function validateProjectCoordinates(form) {
+  return (
+    validateCoordinateValue(form?.longitude, '经度', -180, 180) ||
+    validateCoordinateValue(form?.latitude, '纬度', -90, 90)
+  )
 }
 
 export function normalizeAttachmentAccessUrl(value) {
