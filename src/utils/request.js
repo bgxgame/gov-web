@@ -18,6 +18,11 @@ const service = axios.create({
 let redirectedBy401 = false
 const pendingRequestControllers = new Map()
 
+// 需要重试的网络错误码
+const RETRYABLE_CODES = new Set(['ECONNABORTED', 'ERR_NETWORK', 'ERR_CANCELED'])
+const MAX_RETRY = 2
+const RETRY_DELAY_MS = 800
+
 function shouldSilenceErrorMessage(config) {
   return Boolean(config?.silentError)
 }
@@ -40,11 +45,21 @@ function isCanceledRequest(error) {
   return axios.isCancel(error) || error?.code === 'ERR_CANCELED'
 }
 
+function isRetryable(error) {
+  if (isCanceledRequest(error)) return false
+  if (error?.config?.method && error.config.method.toUpperCase() !== 'GET') return false
+  const status = error?.response?.status
+  if (status && status < 500) return false
+  return RETRYABLE_CODES.has(error?.code) || !error?.response
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 /**
  * 在请求发出前补齐 token、traceId，并在需要时取消同类旧请求。
  * 存在原因：快速查询、切页、切 tab 时，如果旧请求继续占用网络和主线程，会放大卡顿感。
- * 输入输出：输入为 Axios 配置，输出为补齐头信息与取消控制器后的请求配置。
- * 关联链路：所有业务 API，尤其是分页列表、地图接口、审批列表和 `/system/me`。
  */
 service.interceptors.request.use(
   (config) => {
@@ -63,7 +78,8 @@ service.interceptors.request.use(
       ...(config.metadata || {}),
       startAt: Date.now(),
       traceId,
-      cancelKey
+      cancelKey,
+      retryCount: config.metadata?.retryCount || 0
     }
 
     if (cancelKey) {
@@ -84,9 +100,7 @@ service.interceptors.request.use(
 
 /**
  * 统一解析后端 `R` 包装结构，并记录慢请求、业务失败和网络异常。
- * 存在原因：页面层只关心成功分支，失败提示、traceId 注入与会话清理应由基础层兜底。
- * 输入输出：输入为响应对象或异常对象，输出为业务数据或标准错误对象。
- * 关联链路：所有接口调用、统一错误提示、运行时日志缓冲。
+ * 网络错误（无响应、超时）对 GET 接口自动重试最多 2 次，重试间隔 800ms。
  */
 service.interceptors.response.use(
   (response) => {
@@ -135,7 +149,7 @@ service.interceptors.response.use(
     }
     return res
   },
-  (error) => {
+  async (error) => {
     cleanupPendingRequest(error?.config)
 
     const requestUrl = error?.config?.url
@@ -150,6 +164,22 @@ service.interceptors.response.use(
       error.__messageHandled = true
       error.traceId = traceId
       return Promise.reject(error)
+    }
+
+    // GET 接口网络错误自动重试
+    const retryCount = error?.config?.metadata?.retryCount || 0
+    if (isRetryable(error) && retryCount < MAX_RETRY) {
+      logger.warn('接口请求失败，准备重试', { url: requestUrl, retryCount: retryCount + 1, maxRetry: MAX_RETRY, traceId })
+      await sleep(RETRY_DELAY_MS * (retryCount + 1))
+      const retryConfig = {
+        ...error.config,
+        metadata: {
+          ...(error.config?.metadata || {}),
+          retryCount: retryCount + 1,
+          startAt: Date.now()
+        }
+      }
+      return service(retryConfig)
     }
 
     logger.error('接口请求异常', {
