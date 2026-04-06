@@ -323,7 +323,7 @@
                   <template v-if="isDetailImageThumbLoaded(file)">
                     <el-image
                       class="detail-image-thumb"
-                      :src="file.accessUrl"
+                      :src="file.previewUrl"
                     :preview-src-list="detailImagePreviewList"
                     :initial-index="index"
                     fit="cover"
@@ -379,7 +379,7 @@
       </div>
       <template #footer>
         <el-button @click="imagePreview.visible = false">关闭</el-button>
-        <el-button type="primary" @click="handleDownloadAttachment({ accessUrl: imagePreview.url, fileName: imagePreview.name })">
+        <el-button type="primary" @click="handleDownloadAttachment({ downloadUrl: imagePreview.downloadUrl, accessUrl: imagePreview.url, fileName: imagePreview.name })">
           下载
         </el-button>
       </template>
@@ -462,7 +462,8 @@ const detailDialog = reactive({
 const imagePreview = reactive({
   visible: false,
   url: '',
-  name: ''
+  name: '',
+  downloadUrl: ''
 })
 const detailData = ref(createEmptyForm())
 const pendingTempAttachmentIds = ref(new Set())
@@ -486,9 +487,9 @@ const editDistrictOptions = computed(() =>
   appendMissingOption(getDistrictOptions(editDialog.form.province, editDialog.form.city), editDialog.form.district)
 )
 const detailImageAttachments = computed(() =>
-  detailData.value.attachments.filter((item) => item.isImage && item.accessUrl)
+  detailData.value.attachments.filter((item) => item.isImage && item.previewUrl)
 )
-const detailImagePreviewList = computed(() => detailImageAttachments.value.map((item) => item.accessUrl))
+const detailImagePreviewList = computed(() => detailImageAttachments.value.map((item) => item.previewUrl))
 const detailFileAttachments = computed(() =>
   detailData.value.attachments.filter((item) => !item.isImage)
 )
@@ -519,13 +520,17 @@ function fillLeaderFromCurrentUser() {
 function normalizeAttachment(file) {
   if (!file?.id) return null
   const numericSize = Number(file.fileSize ?? 0)
+  const previewUrl = normalizeAttachmentAccessUrl(file.previewUrl || file.accessUrl)
+  const downloadUrl = normalizeAttachmentAccessUrl(file.downloadUrl || file.accessUrl)
   return {
     id: file.id,
     fileName: String(file.fileName || '未命名附件'),
     fileType: String(file.fileType || ''),
     fileSize: Number.isFinite(numericSize) ? numericSize : 0,
     isImage: Boolean(file.isImage ?? file.image),
-    accessUrl: normalizeAttachmentAccessUrl(file.accessUrl)
+    previewUrl,
+    downloadUrl,
+    accessUrl: previewUrl
   }
 }
 
@@ -616,12 +621,15 @@ function resolveAttachmentTypeMeta(file) {
   return { icon: Document, label: '普通文件', tone: 'default' }
 }
 
-function ensureAttachmentUrl(file) {
-  if (!file?.accessUrl) {
+function ensureAttachmentUrl(file, mode = 'preview') {
+  const accessUrl = mode === 'download'
+    ? (file?.downloadUrl || file?.accessUrl)
+    : (file?.previewUrl || file?.accessUrl)
+  if (!accessUrl) {
     showWarning('附件访问地址不存在，请刷新页面后重试')
     return ''
   }
-  return file.accessUrl
+  return accessUrl
 }
 
 function handleViewAttachment(file) {
@@ -629,15 +637,16 @@ function handleViewAttachment(file) {
     showWarning('当前文件不支持查看，仅支持下载')
     return
   }
-  const accessUrl = ensureAttachmentUrl(file)
+  const accessUrl = ensureAttachmentUrl(file, 'preview')
   if (!accessUrl) return
   imagePreview.url = accessUrl
+  imagePreview.downloadUrl = file.downloadUrl || file.accessUrl || accessUrl
   imagePreview.name = file.fileName || '图片附件'
   imagePreview.visible = true
 }
 
 function handleDownloadAttachment(file) {
-  const accessUrl = ensureAttachmentUrl(file)
+  const accessUrl = ensureAttachmentUrl(file, 'download')
   if (!accessUrl) return
   const link = document.createElement('a')
   link.href = accessUrl

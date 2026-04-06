@@ -37,6 +37,8 @@
  * @property {string} fileType
  * @property {number} fileSize
  * @property {boolean} isImage
+ * @property {string} previewUrl
+ * @property {string} downloadUrl
  * @property {string} accessUrl
  */
 
@@ -115,13 +117,17 @@ function normalizeProjectAttachment(file) {
   if (rawId === undefined || rawId === null || rawId === '') return null
 
   const numericSize = Number(file?.fileSize ?? 0)
+  const previewUrl = normalizeAttachmentAccessUrl(file?.previewUrl || file?.accessUrl)
+  const downloadUrl = normalizeAttachmentAccessUrl(file?.downloadUrl || file?.accessUrl)
   return {
     id: rawId,
     fileName: String(file?.fileName || '未命名附件'),
     fileType: String(file?.fileType || ''),
     fileSize: Number.isFinite(numericSize) ? numericSize : 0,
     isImage: Boolean(file?.isImage ?? file?.image),
-    accessUrl: normalizeAttachmentAccessUrl(file?.accessUrl)
+    previewUrl,
+    downloadUrl,
+    accessUrl: previewUrl
   }
 }
 
