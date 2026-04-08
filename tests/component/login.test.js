@@ -65,7 +65,7 @@ describe('login view', () => {
    * 作用：验证登录页会调用登录动作，并在成功后跳到会话层计算出的首页。
    */
   it('should submit login form and jump to the resolved home path', async () => {
-    login.mockResolvedValue({ data: { tokenValue: 'token-1' } })
+    login.mockResolvedValue({ data: { userId: 1, username: 'admin' } })
 
     const LoginView = (await import('../../src/views/login/index.vue')).default
     const wrapper = mount(LoginView, {
@@ -90,7 +90,7 @@ describe('login view', () => {
    */
   it('should fall back to the first enabled menu path when home path is empty', async () => {
     sessionState.homePath = ''
-    login.mockResolvedValue({ data: { tokenValue: 'token-2' } })
+    login.mockResolvedValue({ data: { userId: 1, username: 'admin' } })
 
     const LoginView = (await import('../../src/views/login/index.vue')).default
     const wrapper = mount(LoginView, {

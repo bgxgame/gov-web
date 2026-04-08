@@ -1,12 +1,14 @@
 import { getRuntimeAppConfig } from '../utils/browser-runtime'
 
 function parseMenuKeyList(rawValue) {
-  return [...new Set(
-    String(rawValue || '')
-      .split(',')
-      .map((item) => item.trim())
-      .filter(Boolean)
-  )]
+  return [
+    ...new Set(
+      String(rawValue || '')
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean)
+    )
+  ]
 }
 
 const runtimeEnv = getRuntimeAppConfig()
@@ -40,15 +42,12 @@ const slowInitialRouteThreshold = readNumberValue(
   import.meta.env.DEV ? Math.max(1600, slowRouteThreshold * 2) : Math.max(1200, slowRouteThreshold + 400)
 )
 
-/**
- * 统一管理前端运行时配置。
- * 优先读取服务器启动时生成的 env.js，其次回退到 Vite 构建时环境变量，
- * 这样既兼容本地开发，又支持服务器部署后按需调整配置而不必重新打包。
- */
 export const appConfig = {
-  appName: readEnvValue('VITE_APP_NAME', '项管平台'),
+  appName: readEnvValue('VITE_APP_NAME', '项目管理平台'),
   apiBaseUrl: readEnvValue('VITE_API_BASE_URL', '/api'),
   requestTimeout: readNumberValue('VITE_API_TIMEOUT', 10000),
+  csrfCookieName: readEnvValue('VITE_APP_CSRF_COOKIE_NAME', 'XSRF-TOKEN'),
+  csrfHeaderName: readEnvValue('VITE_APP_CSRF_HEADER_NAME', 'X-CSRF-Token'),
   logLevel: String(readEnvValue('VITE_APP_LOG_LEVEL', 'warn')).toLowerCase(),
   slowRequestThreshold,
   slowRouteThreshold,

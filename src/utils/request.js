@@ -1,29 +1,24 @@
 import axios from 'axios'
 import { appConfig } from '../config/app-config'
-import { clearAuthStorage, readToken } from './browser-storage'
+import { clearAuthStorage, readCsrfToken } from './browser-storage'
 import { getLocationObject, replaceLocation, setRuntimeTimeout } from './browser-runtime'
 import { getErrorMessage, showError } from './feedback'
 import { logger } from './logger'
 import { ensureTraceId, setLatestTraceId, TRACE_ID_HEADER } from './trace'
 
-/**
- * 提供统一的 Axios 实例，集中处理鉴权、慢请求观测、统一响应解析和错误提示。
- * 存在原因：避免页面层散落处理 token、traceId、401 与 `R(code,msg,data)` 结构。
- * 输入输出：输入为页面发起的 HTTP 请求，输出为解析后的业务数据或带 traceId 的错误对象。
- * 关联链路：api 层 -> request -> 后端接口 -> 统一反馈与日志。
- */
 const service = axios.create({
   baseURL: appConfig.apiBaseUrl,
-  timeout: appConfig.requestTimeout
+  timeout: appConfig.requestTimeout,
+  withCredentials: true
 })
 
 let redirectedBy401 = false
 const pendingRequestControllers = new Map()
 
-// 需要重试的网络错误码
 const RETRYABLE_CODES = new Set(['ECONNABORTED', 'ERR_NETWORK', 'ERR_CANCELED'])
 const MAX_RETRY = 2
 const RETRY_DELAY_MS = 800
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 
 function shouldSilenceErrorMessage(config) {
   return Boolean(config?.silentError)
@@ -55,24 +50,27 @@ function isRetryable(error) {
   return RETRYABLE_CODES.has(error?.code) || !error?.response
 }
 
+function shouldAttachCsrfHeader(config) {
+  const method = String(config?.method || 'GET').toUpperCase()
+  return !SAFE_METHODS.has(method)
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-/**
- * 在请求发出前补齐 token、traceId，并在需要时取消同类旧请求。
- * 存在原因：快速查询、切页、切 tab 时，如果旧请求继续占用网络和主线程，会放大卡顿感。
- */
 service.interceptors.request.use(
   (config) => {
     const traceId = ensureTraceId(config)
-    const token = readToken()
     const headers = config.headers || {}
     const cancelKey = resolveCancelKey(config)
 
     headers[TRACE_ID_HEADER] = traceId
-    if (token) {
-      headers.Authorization = token
+    if (shouldAttachCsrfHeader(config)) {
+      const csrfToken = readCsrfToken()
+      if (csrfToken) {
+        headers[appConfig.csrfHeaderName] = csrfToken
+      }
     }
 
     config.headers = headers
@@ -100,10 +98,6 @@ service.interceptors.request.use(
   (error) => Promise.reject(error)
 )
 
-/**
- * 统一解析后端 `R` 包装结构，并记录慢请求、业务失败和网络异常。
- * 网络错误（无响应、超时）对 GET 接口自动重试最多 2 次，重试间隔 800ms。
- */
 service.interceptors.response.use(
   (response) => {
     cleanupPendingRequest(response.config)
@@ -167,7 +161,6 @@ service.interceptors.response.use(
       return Promise.reject(error)
     }
 
-    // GET 接口网络错误自动重试
     const retryCount = error?.config?.metadata?.retryCount || 0
     if (isRetryable(error) && retryCount < MAX_RETRY) {
       logger.warn('接口请求失败，准备重试', { url: requestUrl, retryCount: retryCount + 1, maxRetry: MAX_RETRY, traceId })

@@ -1,13 +1,20 @@
-const TOKEN_KEY = 'token'
+import { appConfig } from '../config/app-config'
+import {
+  getLocalStorageObject,
+  getSessionStorageObject,
+  readDocumentCookie,
+  writeDocumentCookie
+} from './browser-runtime'
+
 const USER_INFO_KEY = 'user_info'
+const LEGACY_TOKEN_KEY = 'token'
 
 function getStorage(type) {
-  if (typeof window === 'undefined') return null
   if (type === 'local') {
-    return window.localStorage || null
+    return getLocalStorageObject()
   }
   if (type === 'session') {
-    return window.sessionStorage || null
+    return getSessionStorageObject()
   }
   return null
 }
@@ -104,37 +111,70 @@ export function writeJsonToSessionStorage(key, value) {
   }
 }
 
-export function getTokenStorageKey() {
-  return TOKEN_KEY
-}
-
 export function getUserInfoStorageKey() {
   return USER_INFO_KEY
 }
 
-export function readToken() {
-  return getLocalValue(TOKEN_KEY)
+export function readCookieValue(name) {
+  const rawCookie = readDocumentCookie()
+  if (!rawCookie) return ''
+  const targetPrefix = `${String(name || '').trim()}=`
+  if (!targetPrefix || targetPrefix === '=') return ''
+  const matched = rawCookie
+    .split(';')
+    .map((item) => item.trim())
+    .find((item) => item.startsWith(targetPrefix))
+  if (!matched) return ''
+  return decodeURIComponent(matched.slice(targetPrefix.length))
 }
 
-export function writeToken(token) {
-  if (token) {
-    return setLocalValue(TOKEN_KEY, token)
-  }
-  return removeLocalValue(TOKEN_KEY)
+export function clearCookieValue(name, path = '/') {
+  const normalizedName = String(name || '').trim()
+  if (!normalizedName) return
+  writeDocumentCookie(`${normalizedName}=; Path=${path}; Max-Age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT`)
+}
+
+export function readCsrfToken() {
+  return readCookieValue(appConfig.csrfCookieName)
+}
+
+export function clearCsrfToken() {
+  clearCookieValue(appConfig.csrfCookieName)
+}
+
+function migrateLegacyUserInfo() {
+  const legacyUserInfo = readJsonFromLocalStorage(USER_INFO_KEY)
+  if (!legacyUserInfo) return null
+  writeJsonToSessionStorage(USER_INFO_KEY, legacyUserInfo)
+  removeLocalValue(USER_INFO_KEY)
+  return legacyUserInfo
 }
 
 export function readUserInfoCache() {
-  return readJsonFromLocalStorage(USER_INFO_KEY)
+  return readJsonFromSessionStorage(USER_INFO_KEY) || migrateLegacyUserInfo()
 }
 
 export function writeUserInfoCache(userInfo) {
   if (userInfo) {
-    return writeJsonToLocalStorage(USER_INFO_KEY, userInfo)
+    removeLocalValue(USER_INFO_KEY)
+    return writeJsonToSessionStorage(USER_INFO_KEY, userInfo)
   }
+  removeSessionValue(USER_INFO_KEY)
   return removeLocalValue(USER_INFO_KEY)
 }
 
+export function hasAuthSessionHint() {
+  return Boolean(readCsrfToken() || readUserInfoCache())
+}
+
+export function clearLegacyTokenStorage() {
+  removeLocalValue(LEGACY_TOKEN_KEY)
+  removeSessionValue(LEGACY_TOKEN_KEY)
+}
+
 export function clearAuthStorage() {
-  removeLocalValue(TOKEN_KEY)
+  clearLegacyTokenStorage()
+  removeSessionValue(USER_INFO_KEY)
   removeLocalValue(USER_INFO_KEY)
+  clearCsrfToken()
 }

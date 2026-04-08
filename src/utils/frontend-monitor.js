@@ -1,11 +1,14 @@
 import { appConfig } from '../config/app-config'
-import { readToken } from './browser-storage'
+import { readCsrfToken } from './browser-storage'
 import {
+  addDocumentEventListener,
   addWindowEventListener,
   clearRuntimeInterval,
   fetchWithRuntime,
   getCurrentPath,
+  getDocumentObject,
   hasWindow,
+  removeDocumentEventListener,
   removeWindowEventListener,
   setRuntimeInterval
 } from './browser-runtime'
@@ -85,9 +88,9 @@ async function sendBatch(logs, keepalive = false) {
     'Content-Type': 'application/json',
     [TRACE_ID_HEADER]: createTraceId()
   }
-  const token = readToken()
-  if (token) {
-    headers.Authorization = token
+  const csrfToken = readCsrfToken()
+  if (csrfToken) {
+    headers[appConfig.csrfHeaderName] = csrfToken
   }
 
   const response = await fetchWithRuntime(`${appConfig.apiBaseUrl}${REPORT_ENDPOINT}`, {
@@ -127,16 +130,20 @@ function handleRuntimeLogEvent(event) {
   }
 }
 
-function installPageLifecycleHooks() {
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') {
-      void flushFrontendMonitorLogs({ keepalive: true })
-    }
-  })
-
-  addWindowEventListener('pagehide', () => {
+function handleVisibilityChange() {
+  const doc = getDocumentObject()
+  if (doc?.visibilityState === 'hidden') {
     void flushFrontendMonitorLogs({ keepalive: true })
-  })
+  }
+}
+
+function handlePageHide() {
+  void flushFrontendMonitorLogs({ keepalive: true })
+}
+
+function installPageLifecycleHooks() {
+  addDocumentEventListener('visibilitychange', handleVisibilityChange)
+  addWindowEventListener('pagehide', handlePageHide)
 }
 
 export function installFrontendMonitor() {
@@ -157,6 +164,8 @@ export function getFrontendMonitorQueueSize() {
 export function resetFrontendMonitorForTest() {
   if (hasWindow()) {
     removeWindowEventListener(RUNTIME_LOG_EVENT, handleRuntimeLogEvent)
+    removeDocumentEventListener('visibilitychange', handleVisibilityChange)
+    removeWindowEventListener('pagehide', handlePageHide)
     clearRuntimeInterval(flushTimer)
     flushTimer = null
   }

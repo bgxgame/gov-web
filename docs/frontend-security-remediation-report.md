@@ -1,61 +1,47 @@
-# Frontend Security Remediation Report
+# 前端安全整改报告
 
-## Scope
-This report records the frontend continuation work completed while keeping the current authentication model, deployment mode, and user-facing UI behavior unchanged.
+## 规范来源
+- `JavaScript编程规范.txt`
+- 本轮漏洞修复方案：Cookie 会话、CSRF、浏览器存储收口、统一运行时访问
 
-## Completed Work
-- Added a centralized browser runtime access module for `window`, location, event listeners, and runtime helpers.
-- Added a centralized storage module for `localStorage` and `sessionStorage`.
-- Reworked runtime and storage access in:
-  - `src/config/app-config.js`
-  - `src/stores/session.js`
-  - `src/router/index.js`
-  - `src/utils/request.js`
-  - `src/utils/logger.js`
-  - `src/utils/frontend-monitor.js`
-  - `src/utils/project-models.js`
-- Removed `import * as` usage from `src/utils/perf-metrics.js`.
-- Added minimal ESLint gatekeeping focused on high-value rules only.
-- Kept `env.js` runtime configuration mode and the current `token + user_info` compatibility path.
+## 命中问题
+- 前端原链路依赖把 token 落地到浏览器存储并手工发送 `Authorization`
+- 请求层和前端监控层缺少统一 CSRF 处理
+- 会话、缓存、Cookie 与浏览器对象访问分散在多个模块
+- 文档和部署模板未体现 Cookie + CSRF 新行为
 
-## Verification Results
-- Frontend lint: PASS
-  - Command: `npm run lint`
-- Frontend tests: PASS
-  - Command: `npm run test`
-  - Result: `69` tests passed
-- Frontend build: PASS
-  - Command: `npm run build`
-- Delivery package refresh: PASS
-  - Command: `powershell -ExecutionPolicy Bypass -File ..\gov-project-backend\scripts\package-kylin-arm.ps1`
-  - Result: refreshed frontend `dist` and backend `deploy-output/gov4`
+## 改造动作
+- 请求层切到同源 Cookie，会话凭据不再写入浏览器存储
+- 非 GET 请求统一从 `XSRF-TOKEN` Cookie 读取并发送 `X-CSRF-Token`
+- 新增浏览器运行时访问封装，统一 `window`、`document`、`fetch`、事件和 cookie 读写入口
+- 用户缓存仅保留非敏感字段，并改为 `sessionStorage` 兜底
+- `session store`、`router`、`frontend-monitor`、`request` 统一复用基础模块
+- 更新前端部署模板和 README，补充 Cookie/CSRF 运行时变量说明
+- 更新单元测试，覆盖 Cookie 模式下的登录态和前端监控上报
 
-## Lint Scope
-- Enabled rules:
-  - `no-eval`
-  - `no-new-func`
-  - `no-throw-literal`
-  - `no-duplicate-imports`
-  - namespace import restriction for `import *`
-- Explicitly excluded:
-  - `src/**/map-data/**`
-  - `dist/**`
-  - `deploy-output/**`
+## 验证结果
+- 前端 lint：PASS
+  - `npm run lint`
+- 前端测试：PASS
+  - `npm run test`
+- 前端构建：PASS
+  - `npm run build`
+- 交付包刷新：PASS
+  - `dist/`
+  - `../gov-project-backend/deploy-output/gov4/frontend/dist/`
+  - `../gov-project-backend/deploy-output/gov4/frontend/frontend.env`
 
-## Compatibility Notes
-- No UI or UX redesign was introduced in this round.
-- The current auth model remains compatible with `token` and `user_info` in browser storage.
-- Runtime configuration still loads from `/env.js`.
+## 未完成项
+- 待生成 frontend Git commit 后回填 commit id
 
-## Delivery Artifacts
-- Source changes: frontend repository working tree
-- Lint configuration: `eslint.config.js`
-- Build output: `dist/`
-- Deployment package contribution: refreshed by backend packaging flow into `deploy-output/gov4/frontend/dist/`
+## 剩余风险
+- 本轮按纯 Web 同源场景实施，不保留外部系统长期 `Authorization` token 兼容链路
+- 历史浏览器中的旧 `localStorage token` 会在新版本首次运行后被清理
 
-## Remaining Risks
-- Browser storage is now centralized, but the project still relies on browser-managed token storage rather than HttpOnly cookies.
-- This round intentionally avoided broader business-page refactors to keep UI behavior stable.
+## 交付位置
+- 源码: `gov-web`
+- 构建产物: `dist/`
+- 部署模板: `deploy/kylin-arm/frontend.env.example`
 
-## Commit
-- Frontend commit: pending
+## 对应 Commit
+- frontend commit: pending

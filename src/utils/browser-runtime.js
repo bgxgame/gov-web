@@ -6,6 +6,11 @@ export function hasWindow() {
   return getWindow() !== null
 }
 
+export function getDocumentObject() {
+  const win = getWindow()
+  return win && win.document ? win.document : null
+}
+
 export function getRuntimeAppConfig() {
   const win = getWindow()
   return win && win.__APP_CONFIG__ ? win.__APP_CONFIG__ : {}
@@ -50,6 +55,18 @@ export function removeWindowEventListener(eventName, handler, options) {
   const win = getWindow()
   if (!win || typeof win.removeEventListener !== 'function') return
   win.removeEventListener(eventName, handler, options)
+}
+
+export function addDocumentEventListener(eventName, handler, options) {
+  const doc = getDocumentObject()
+  if (!doc || typeof doc.addEventListener !== 'function') return
+  doc.addEventListener(eventName, handler, options)
+}
+
+export function removeDocumentEventListener(eventName, handler, options) {
+  const doc = getDocumentObject()
+  if (!doc || typeof doc.removeEventListener !== 'function') return
+  doc.removeEventListener(eventName, handler, options)
 }
 
 export function dispatchWindowEvent(event) {
@@ -105,4 +122,19 @@ export function setRuntimeGlobal(name, value) {
 export function getSessionStorageObject() {
   const win = getWindow()
   return win && win.sessionStorage ? win.sessionStorage : null
+}
+
+export function getLocalStorageObject() {
+  const win = getWindow()
+  return win && win.localStorage ? win.localStorage : null
+}
+
+export function readDocumentCookie() {
+  return getDocumentObject()?.cookie || ''
+}
+
+export function writeDocumentCookie(value) {
+  const doc = getDocumentObject()
+  if (!doc) return
+  doc.cookie = value
 }

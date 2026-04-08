@@ -5,6 +5,7 @@ describe('frontend-monitor', () => {
     vi.resetModules()
     window.localStorage.clear()
     window.sessionStorage.clear()
+    document.cookie = 'XSRF-TOKEN=csrf-demo; Path=/'
     window.fetch = vi.fn().mockResolvedValue({ ok: true })
   })
 
@@ -14,11 +15,10 @@ describe('frontend-monitor', () => {
     vi.restoreAllMocks()
   })
 
-  it('should collect warn log and flush it to backend monitor endpoint', async () => {
+  it('should collect warn log, attach csrf header and flush it to backend monitor endpoint', async () => {
     const { installFrontendMonitor, flushFrontendMonitorLogs, getFrontendMonitorQueueSize } = await import('../../src/utils/frontend-monitor')
     const { logger } = await import('../../src/utils/logger')
 
-    window.localStorage.setItem('token', 'token-demo')
     installFrontendMonitor()
     logger.warn('检测到慢请求', { url: '/api/project/page', traceId: 'trace-demo' })
 
@@ -28,6 +28,7 @@ describe('frontend-monitor', () => {
     expect(window.fetch).toHaveBeenCalledTimes(1)
     const [url, options] = window.fetch.mock.calls[0]
     expect(url).toBe('/api/system/frontend-monitor/report')
+    expect(options.headers['X-CSRF-Token']).toBe('csrf-demo')
     const payload = JSON.parse(options.body)
     expect(payload.logs[0]).toMatchObject({
       level: 'warn',

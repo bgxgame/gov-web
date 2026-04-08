@@ -1,20 +1,14 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { resolveFirstEnabledMenuPath, resolveHomePathFromCachedUserInfo, useSessionStore } from '../stores/session'
 import { appConfig } from '../config/app-config'
-import { readToken } from '../utils/browser-storage'
-import { filterEnabledMenuKeys } from '../utils/menu-feature'
+import { hasAuthSessionHint } from '../utils/browser-storage'
 import { hasWindow } from '../utils/browser-runtime'
 import { showError } from '../utils/feedback'
 import { logUserAction, logger } from '../utils/logger'
+import { filterEnabledMenuKeys } from '../utils/menu-feature'
 import { nowMs, reportPerfAction } from '../utils/perf-metrics'
 import { finishRouteProgress, startRouteProgress } from '../utils/route-progress'
 
-/**
- * 职责：维护前端静态路由表，并通过 `meta` 描述菜单权限、角色权限和缓存策略。
- * 为什么存在：当前菜单规模稳定，静态路由能降低动态注入复杂度，同时保持权限判断可读。
- * 关键输入输出：输入为浏览器地址和当前登录用户权限；输出为目标页面组件与访问控制结果。
- * 关联链路：登录成功 -> 路由守卫 -> 主布局 -> 菜单切换。
- */
 const routes = [
   {
     path: '/login',
@@ -138,8 +132,9 @@ function resolveHomePath(sessionStore) {
 
 function resolveProtectedEntryPath() {
   if (!hasWindow()) return resolveFirstEnabledMenuPath() || '/login'
-  const token = readToken()
-  if (!token) return '/login'
+  if (!hasAuthSessionHint() && !resolveHomePathFromCachedUserInfo()) {
+    return '/login'
+  }
   return resolveHomePathFromCachedUserInfo() || resolveFirstEnabledMenuPath() || '/login'
 }
 
@@ -153,7 +148,7 @@ function resolveDeniedNavigationTarget(to, from, sessionStore) {
 
 function shouldReuseCachedUserInfo(sessionStore, to) {
   if (!sessionStore.userInfo || sessionStore.userInfoSource !== 'cache') return false
-  const requiredMenus = filterEnabledMenuKeys(to.meta?.menus || [])
+  const requiredMenus = to.meta?.menus || []
   if (requiredMenus.length > 0) {
     return sessionStore.hasAnyMenu(requiredMenus)
   }
@@ -164,12 +159,6 @@ function shouldReuseCachedUserInfo(sessionStore, to) {
   return true
 }
 
-/**
- * 职责：统一处理登录校验、用户信息补齐和菜单/角色权限判断。
- * 为什么存在：让每次路由切换都走同一套会话与权限逻辑，避免页面层自行兜底。
- * 关键输入输出：输入为目标路由、当前会话和用户权限；输出为放行、阻止或重定向决策。
- * 关联链路：登录跳转、菜单切换、刷新页面后的权限恢复。
- */
 router.beforeEach(async (to, from, next) => {
   const guardStartAt = nowMs()
   currentRouteProgressToken = startRouteProgress({
@@ -213,6 +202,7 @@ router.beforeEach(async (to, from, next) => {
     return
   }
 
+  sessionStore.syncAuthenticatedHint()
   if (!sessionStore.isAuthenticated) {
     guardMetrics.decision = 'redirect_to_login'
     logger.warn('未登录访问受保护页面，已跳转登录页', {
