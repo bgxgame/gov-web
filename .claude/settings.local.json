@@ -10,7 +10,22 @@
       "Bash(mvn -q -DskipTests compile)",
       "Bash(mvn -q -DskipTests compile -f \"/c/Users/brace/Documents/work/gov/gov-project-backend/pom.xml\")",
       "Bash(mvn -q test -f \"/c/Users/brace/Documents/work/gov/gov-project-backend/pom.xml\")",
-      "Bash(mvn -q package -DskipTests -f \"/c/Users/brace/Documents/work/gov/gov-project-backend/pom.xml\")"
+      "Bash(mvn -q package -DskipTests -f \"/c/Users/brace/Documents/work/gov/gov-project-backend/pom.xml\")",
+      "Bash(python3 -c ':*)",
+      "Bash(python -c ':*)",
+      "Bash(python /tmp/write_schema.py)",
+      "Bash(python /tmp/write_ratelimit.py)",
+      "Bash(python /tmp/write_db_backup.py)",
+      "Bash(python /tmp/write_health_check.py)",
+      "Bash(python /tmp/write_request.py)",
+      "Bash(python /tmp/write_request_js.py)",
+      "Bash(python /tmp/write_runbook.py)",
+      "Bash(python /tmp/write_progress_backend.py)",
+      "Bash(python /tmp/write_progress_frontend.py)",
+      "Bash(python /tmp/write_deploy_guide.py)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\brace\\Documents\\work\\gov\\gov-project-backend\\docs"
     ]
   }
 }
