@@ -1,3 +1,5 @@
+import { getLocationOrigin, hasWindow } from './browser-runtime'
+
 /**
  * @typedef {Object} ProjectUserOption
  * @property {string|number} id
@@ -91,16 +93,17 @@ export function validateProjectCoordinates(form) {
 export function normalizeAttachmentAccessUrl(value) {
   const rawUrl = String(value || '').trim()
   if (!rawUrl) return ''
-  if (typeof window === 'undefined' || typeof URL === 'undefined') {
+  if (!hasWindow() || typeof URL === 'undefined') {
     return rawUrl
   }
 
   try {
-    const resolvedUrl = new URL(rawUrl, window.location.origin)
+    const origin = getLocationOrigin()
+    const resolvedUrl = new URL(rawUrl, origin || undefined)
     if (!resolvedUrl.pathname.startsWith('/minio/')) {
       return resolvedUrl.toString()
     }
-    return `${window.location.origin}${resolvedUrl.pathname}${resolvedUrl.search}${resolvedUrl.hash}`
+    return `${origin}${resolvedUrl.pathname}${resolvedUrl.search}${resolvedUrl.hash}`
   } catch (error) {
     return rawUrl
   }

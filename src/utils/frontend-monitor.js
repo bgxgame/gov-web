@@ -1,4 +1,14 @@
 import { appConfig } from '../config/app-config'
+import { readToken } from './browser-storage'
+import {
+  addWindowEventListener,
+  clearRuntimeInterval,
+  fetchWithRuntime,
+  getCurrentPath,
+  hasWindow,
+  removeWindowEventListener,
+  setRuntimeInterval
+} from './browser-runtime'
 import { createTraceId, getLatestTraceId, TRACE_ID_HEADER } from './trace'
 import { RUNTIME_LOG_EVENT } from './logger'
 
@@ -9,13 +19,6 @@ let installed = false
 let sending = false
 let flushTimer = null
 let pendingQueue = []
-
-/**
- * 职责：把浏览器侧关键运行日志批量上报到后端。
- * 为什么存在：仅靠浏览器本地日志无法支撑真实生产排障，需要把可疑异常和慢链路沉淀到服务端。
- * 关键输入输出：输入为 logger 派发的运行日志事件，输出为后端前端监控上报请求。
- * 关联链路：logger -> frontend-monitor -> /system/frontend-monitor/report -> 管理员监控页面。
- */
 
 function shouldReport(log) {
   if (!appConfig.frontendMonitorEnabled || !log) return false
@@ -42,11 +45,6 @@ function resolveEventName(log) {
   return resolveLogType(log)
 }
 
-function resolvePagePath() {
-  if (typeof window === 'undefined' || !window.location) return ''
-  return `${window.location.pathname || ''}${window.location.search || ''}${window.location.hash || ''}`
-}
-
 function toDetailJson(log) {
   const details = Array.isArray(log?.args) ? log.args.slice(1) : []
   if (details.length === 0) return ''
@@ -67,7 +65,7 @@ function normalizeReportItem(log) {
     type: resolveLogType(log),
     eventName: resolveEventName(log),
     message: String(log?.args?.[0] || '未知前端日志'),
-    pagePath: resolvePagePath(),
+    pagePath: getCurrentPath(),
     traceId,
     detailJson: toDetailJson(log)
   }
@@ -87,12 +85,12 @@ async function sendBatch(logs, keepalive = false) {
     'Content-Type': 'application/json',
     [TRACE_ID_HEADER]: createTraceId()
   }
-  const token = localStorage.getItem('token')
+  const token = readToken()
   if (token) {
     headers.Authorization = token
   }
 
-  const response = await window.fetch(`${appConfig.apiBaseUrl}${REPORT_ENDPOINT}`, {
+  const response = await fetchWithRuntime(`${appConfig.apiBaseUrl}${REPORT_ENDPOINT}`, {
     method: 'POST',
     headers,
     body: JSON.stringify({ logs }),
@@ -102,11 +100,8 @@ async function sendBatch(logs, keepalive = false) {
   return response.ok
 }
 
-/**
- * 作用：立即尝试把待上报日志发送到后端。
- */
 export async function flushFrontendMonitorLogs(options = {}) {
-  if (!appConfig.frontendMonitorEnabled || sending || pendingQueue.length === 0 || typeof window === 'undefined') {
+  if (!appConfig.frontendMonitorEnabled || sending || pendingQueue.length === 0 || !hasWindow()) {
     return false
   }
   sending = true
@@ -139,42 +134,31 @@ function installPageLifecycleHooks() {
     }
   })
 
-  window.addEventListener('pagehide', () => {
+  addWindowEventListener('pagehide', () => {
     void flushFrontendMonitorLogs({ keepalive: true })
   })
 }
 
-/**
- * 作用：安装前端监控上报器。
- */
 export function installFrontendMonitor() {
-  if (installed || typeof window === 'undefined') return
+  if (installed || !hasWindow()) return
   installed = true
-  window.addEventListener(RUNTIME_LOG_EVENT, handleRuntimeLogEvent)
+  addWindowEventListener(RUNTIME_LOG_EVENT, handleRuntimeLogEvent)
   installPageLifecycleHooks()
   const intervalMs = Math.max(3000, Number(appConfig.frontendMonitorFlushIntervalMs || 10000))
-  flushTimer = window.setInterval(() => {
+  flushTimer = setRuntimeInterval(() => {
     void flushFrontendMonitorLogs()
   }, intervalMs)
 }
 
-/**
- * 作用：仅供测试读取当前待发送队列大小。
- */
 export function getFrontendMonitorQueueSize() {
   return pendingQueue.length
 }
 
-/**
- * 作用：仅供测试重置监控器状态。
- */
 export function resetFrontendMonitorForTest() {
-  if (typeof window !== 'undefined') {
-    window.removeEventListener(RUNTIME_LOG_EVENT, handleRuntimeLogEvent)
-    if (flushTimer) {
-      window.clearInterval(flushTimer)
-      flushTimer = null
-    }
+  if (hasWindow()) {
+    removeWindowEventListener(RUNTIME_LOG_EVENT, handleRuntimeLogEvent)
+    clearRuntimeInterval(flushTimer)
+    flushTimer = null
   }
   pendingQueue = []
   sending = false

@@ -65,6 +65,8 @@ describe('project-models', () => {
         fileType: 'image/png',
         fileSize: 2048,
         isImage: true,
+        previewUrl: 'https://example.com/1.png',
+        downloadUrl: 'https://example.com/1.png',
         accessUrl: 'https://example.com/1.png'
       }
     ])

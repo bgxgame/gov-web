@@ -8,6 +8,7 @@
     "build": "powershell -ExecutionPolicy Bypass -File ./scripts/run-with-env-log.ps1 -Mode build",
     "build:log": "powershell -ExecutionPolicy Bypass -File ./scripts/run-with-env-log.ps1 -Mode build -ForceLog",
     "build:stats": "powershell -ExecutionPolicy Bypass -File ./scripts/report-build-stats.ps1 -Build",
+    "lint": "eslint \"src/**/*.{js,vue}\" --max-warnings=0",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -30,13 +31,18 @@
     "vue-router": "^4.6.4"
   },
   "devDependencies": {
+    "@eslint/js": "^9.24.0",
     "@playwright/test": "^1.53.2",
     "@vue/test-utils": "^2.4.6",
     "@vitejs/plugin-vue": "^6.0.5",
+    "eslint": "^9.24.0",
+    "eslint-plugin-vue": "^9.33.0",
+    "globals": "^15.15.0",
     "jsdom": "^26.1.0",
     "unplugin-auto-import": "^21.0.0",
     "unplugin-vue-components": "^32.0.0",
     "vite": "^8.0.1",
+    "vue-eslint-parser": "^9.4.3",
     "vitest": "^3.2.4"
   }
 }

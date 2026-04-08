@@ -1,7 +1,9 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { resolveFirstEnabledMenuPath, resolveHomePathFromCachedUserInfo, useSessionStore } from '../stores/session'
 import { appConfig } from '../config/app-config'
+import { readToken } from '../utils/browser-storage'
 import { filterEnabledMenuKeys } from '../utils/menu-feature'
+import { hasWindow } from '../utils/browser-runtime'
 import { showError } from '../utils/feedback'
 import { logUserAction, logger } from '../utils/logger'
 import { nowMs, reportPerfAction } from '../utils/perf-metrics'
@@ -135,8 +137,8 @@ function resolveHomePath(sessionStore) {
 }
 
 function resolveProtectedEntryPath() {
-  if (typeof window === 'undefined') return resolveFirstEnabledMenuPath() || '/login'
-  const token = localStorage.getItem('token')
+  if (!hasWindow()) return resolveFirstEnabledMenuPath() || '/login'
+  const token = readToken()
   if (!token) return '/login'
   return resolveHomePathFromCachedUserInfo() || resolveFirstEnabledMenuPath() || '/login'
 }

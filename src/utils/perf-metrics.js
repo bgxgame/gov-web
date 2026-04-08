@@ -1,5 +1,5 @@
 import { appConfig } from '../config/app-config'
-import * as loggerModule from './logger'
+import { logUserAction, logger } from './logger'
 
 export function nowMs() {
   if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
@@ -27,10 +27,9 @@ export function reportPerfAction(action, payload = {}, options = {}) {
     ...payload
   }
 
-  if (typeof loggerModule.logUserAction === 'function') {
-    loggerModule.logUserAction(action, eventPayload, level)
+  if (typeof logUserAction === 'function') {
+    logUserAction(action, eventPayload, level)
   } else {
-    const logger = loggerModule.logger || console
     const logFn = typeof logger[level] === 'function' ? logger[level] : logger.info || logger.log
     if (typeof logFn === 'function') {
       logFn('performance_metric', {

@@ -1,4 +1,14 @@
 import { appConfig } from '../config/app-config'
+import { readJsonFromSessionStorage, writeJsonToSessionStorage } from './browser-storage'
+import {
+  addWindowEventListener,
+  dispatchWindowEvent,
+  getRuntimeGlobal,
+  hasWindow,
+  requestIdleRuntimeCallback,
+  setRuntimeGlobal,
+  setRuntimeTimeout
+} from './browser-runtime'
 import { getLatestTraceId } from './trace'
 
 const LEVEL_MAP = {
@@ -10,8 +20,9 @@ const LEVEL_MAP = {
 
 const SENSITIVE_KEYS = ['password', 'token', 'authorization', 'phone', 'secret', 'key']
 const RUNTIME_LOG_KEY = '__gov_runtime_logs__'
-let runtimeObserversInstalled = false
 const RUNTIME_LOG_EVENT = '__gov_runtime_log__'
+
+let runtimeObserversInstalled = false
 let bufferedRuntimeLogs = null
 let runtimeLogsFlushTimer = null
 
@@ -52,53 +63,33 @@ function sanitizeValue(value, depth = 0) {
 
 function readBufferedLogs() {
   if (bufferedRuntimeLogs) return bufferedRuntimeLogs
-  if (typeof window === 'undefined') return []
-  try {
-    const raw = window.sessionStorage?.getItem(RUNTIME_LOG_KEY)
-    if (!raw) {
-      bufferedRuntimeLogs = []
-      return bufferedRuntimeLogs
-    }
-    const parsed = JSON.parse(raw)
-    bufferedRuntimeLogs = Array.isArray(parsed) ? parsed : []
-    return bufferedRuntimeLogs
-  } catch (error) {
-    bufferedRuntimeLogs = []
-    return bufferedRuntimeLogs
-  }
+  if (!hasWindow()) return []
+  const parsed = readJsonFromSessionStorage(RUNTIME_LOG_KEY)
+  bufferedRuntimeLogs = Array.isArray(parsed) ? parsed : []
+  return bufferedRuntimeLogs
 }
 
 function persistRuntimeLogsSoon() {
-  if (typeof window === 'undefined' || runtimeLogsFlushTimer) return
+  if (!hasWindow() || runtimeLogsFlushTimer) return
   const flush = () => {
     runtimeLogsFlushTimer = null
-    if (typeof window === 'undefined') return
+    if (!hasWindow()) return
     const normalizedLogs = Array.isArray(bufferedRuntimeLogs) ? bufferedRuntimeLogs : []
-    try {
-      if (window.sessionStorage) {
-        window.sessionStorage.setItem(RUNTIME_LOG_KEY, JSON.stringify(normalizedLogs))
-      }
-    } catch (error) {
-      // 会话存储不可用时静默忽略，仅保留控制台输出。
-    }
-    window.__GOV_APP_LOGS__ = normalizedLogs
+    writeJsonToSessionStorage(RUNTIME_LOG_KEY, normalizedLogs)
+    setRuntimeGlobal('__GOV_APP_LOGS__', normalizedLogs)
   }
-  if (typeof window.requestIdleCallback === 'function') {
-    runtimeLogsFlushTimer = window.requestIdleCallback(flush, { timeout: 500 })
-    return
-  }
-  runtimeLogsFlushTimer = window.setTimeout(flush, 120)
+  runtimeLogsFlushTimer = requestIdleRuntimeCallback(flush, { timeout: 500 }) || setRuntimeTimeout(flush, 120)
 }
 
 function writeBufferedLogs(logs) {
-  if (typeof window === 'undefined') return
+  if (!hasWindow()) return
   bufferedRuntimeLogs = Array.isArray(logs) ? logs : []
-  window.__GOV_APP_LOGS__ = bufferedRuntimeLogs
+  setRuntimeGlobal('__GOV_APP_LOGS__', bufferedRuntimeLogs)
   persistRuntimeLogsSoon()
 }
 
 function appendRuntimeLogSanitized(level, sanitizedArgs) {
-  if (typeof window === 'undefined') return
+  if (!hasWindow()) return
   const nextLog = {
     time: new Date().toISOString(),
     level,
@@ -109,9 +100,9 @@ function appendRuntimeLogSanitized(level, sanitizedArgs) {
   logs.push(nextLog)
   writeBufferedLogs(logs.slice(-limit))
   try {
-    window.dispatchEvent(new CustomEvent(RUNTIME_LOG_EVENT, { detail: nextLog }))
+    dispatchWindowEvent(new CustomEvent(RUNTIME_LOG_EVENT, { detail: nextLog }))
   } catch (error) {
-    // 运行时日志事件派发失败时，不影响主业务链路。
+    // Ignore event dispatch failures and keep the app running.
   }
 }
 
@@ -138,13 +129,6 @@ export const logger = {
   }
 }
 
-/**
- * 记录用户关键动作，便于和 traceId、后端性能日志、审计日志联动回放。
- *
- * @param {string} action 动作名称
- * @param {Record<string, unknown>} payload 动作附带信息
- * @param {'debug'|'info'|'warn'|'error'} level 日志级别
- */
 export function logUserAction(action, payload = {}, level = 'info') {
   const normalizedLevel = LEVEL_MAP[level] ? level : 'info'
   logger[normalizedLevel]('用户操作', {
@@ -170,23 +154,20 @@ function resolveErrorPayload(eventOrReason) {
   }
 }
 
-/**
- * 安装浏览器全局运行时异常监听，将未捕获错误与未处理 Promise 拒绝写入统一日志缓冲。
- */
 export function installRuntimeErrorObservers() {
-  if (typeof window === 'undefined' || runtimeObserversInstalled) return
+  if (!hasWindow() || runtimeObserversInstalled) return
   runtimeObserversInstalled = true
 
-  window.addEventListener('error', (event) => {
+  addWindowEventListener('error', (event) => {
     logger.error('浏览器运行时异常', resolveErrorPayload(event))
   })
 
-  window.addEventListener('unhandledrejection', (event) => {
+  addWindowEventListener('unhandledrejection', (event) => {
     logger.error('未处理的异步异常', resolveErrorPayload(event))
   })
 }
 
-if (typeof window !== 'undefined' && !window.__GOV_APP_LOGS__) {
+if (hasWindow() && !getRuntimeGlobal('__GOV_APP_LOGS__')) {
   writeBufferedLogs(readBufferedLogs())
 }
 

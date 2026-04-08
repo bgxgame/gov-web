@@ -1,5 +1,7 @@
 import axios from 'axios'
 import { appConfig } from '../config/app-config'
+import { clearAuthStorage, readToken } from './browser-storage'
+import { getLocationObject, replaceLocation, setRuntimeTimeout } from './browser-runtime'
 import { getErrorMessage, showError } from './feedback'
 import { logger } from './logger'
 import { ensureTraceId, setLatestTraceId, TRACE_ID_HEADER } from './trace'
@@ -64,7 +66,7 @@ function sleep(ms) {
 service.interceptors.request.use(
   (config) => {
     const traceId = ensureTraceId(config)
-    const token = localStorage.getItem('token')
+    const token = readToken()
     const headers = config.headers || {}
     const cancelKey = resolveCancelKey(config)
 
@@ -116,16 +118,15 @@ service.interceptors.response.use(
       logger.warn('接口业务失败', { url: requestUrl, code: res.code, msg: res.msg, durationMs, traceId })
       let messageHandled = false
       if (res.code === 401) {
-        localStorage.removeItem('token')
-        localStorage.removeItem('user_info')
+        clearAuthStorage()
         if (!redirectedBy401) {
           redirectedBy401 = true
           showError(res.msg || '登录已失效，请重新登录')
           messageHandled = true
-          if (window.location.pathname !== '/login') {
-            window.location.replace('/login')
+          if (getLocationObject()?.pathname !== '/login') {
+            replaceLocation('/login')
           }
-          setTimeout(() => {
+          setRuntimeTimeout(() => {
             redirectedBy401 = false
           }, 800)
         }

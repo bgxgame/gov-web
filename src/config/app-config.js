@@ -1,3 +1,5 @@
+import { getRuntimeAppConfig } from '../utils/browser-runtime'
+
 function parseMenuKeyList(rawValue) {
   return [...new Set(
     String(rawValue || '')
@@ -7,9 +9,7 @@ function parseMenuKeyList(rawValue) {
   )]
 }
 
-const runtimeEnv = typeof window !== 'undefined' && window.__APP_CONFIG__
-  ? window.__APP_CONFIG__
-  : {}
+const runtimeEnv = getRuntimeAppConfig()
 
 function readEnvValue(key, fallbackValue = '') {
   const runtimeValue = runtimeEnv[key]

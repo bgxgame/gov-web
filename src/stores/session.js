@@ -1,6 +1,12 @@
 import { defineStore } from 'pinia'
 import { getCurrentUser, login as loginApi, logout as logoutApi } from '../api/auth'
 import { filterEnabledMenuKeys, isMenuEnabled } from '../utils/menu-feature'
+import {
+  readJsonFromLocalStorage,
+  readToken,
+  writeToken,
+  writeUserInfoCache
+} from '../utils/browser-storage'
 
 const USER_KEY = 'user_info'
 
@@ -25,15 +31,8 @@ export function resolveFirstEnabledMenuPath() {
 }
 
 export function resolveHomePathFromCachedUserInfo() {
-  if (typeof window === 'undefined') return null
-  const raw = localStorage.getItem(USER_KEY)
-  if (!raw) return null
-  try {
-    const parsed = JSON.parse(raw)
-    return resolveHomePathByMenuKeys(parsed?.menuKeys)
-  } catch (error) {
-    return null
-  }
+  const parsed = readJsonFromLocalStorage(USER_KEY)
+  return parsed ? resolveHomePathByMenuKeys(parsed?.menuKeys) : null
 }
 
 /**
@@ -84,17 +83,12 @@ function normalizeMenuKeys(menuKeys) {
  * 关联链路：页面刷新、登录后回显、路由守卫初始化。
  */
 function parseUserInfo() {
-  const raw = localStorage.getItem(USER_KEY)
-  if (!raw) return null
-  try {
-    const data = JSON.parse(raw)
-    return {
-      ...data,
-      roleCodes: normalizeRoleCodes(data?.roleCodes),
-      menuKeys: normalizeMenuKeys(data?.menuKeys)
-    }
-  } catch (error) {
-    return null
+  const data = readJsonFromLocalStorage(USER_KEY)
+  if (!data) return null
+  return {
+    ...data,
+    roleCodes: normalizeRoleCodes(data?.roleCodes),
+    menuKeys: normalizeMenuKeys(data?.menuKeys)
   }
 }
 
@@ -130,7 +124,7 @@ export const useSessionStore = defineStore('session', {
   state: () => {
     const cachedUserInfo = parseUserInfo()
     return {
-      token: localStorage.getItem('token') || '',
+      token: readToken() || '',
       userInfo: cachedUserInfo,
       userInfoSource: cachedUserInfo ? 'cache' : '',
       _userInfoPromise: null,
@@ -150,11 +144,7 @@ export const useSessionStore = defineStore('session', {
      */
     setToken(token) {
       this.token = token || ''
-      if (token) {
-        localStorage.setItem('token', token)
-      } else {
-        localStorage.removeItem('token')
-      }
+      writeToken(this.token)
     },
 
     /**
@@ -169,11 +159,7 @@ export const useSessionStore = defineStore('session', {
       if (userInfo && (source === 'server' || source === 'login')) {
         this._lastEnsureServerAt = Date.now()
       }
-      if (userInfo) {
-        localStorage.setItem(USER_KEY, JSON.stringify(userInfo))
-      } else {
-        localStorage.removeItem(USER_KEY)
-      }
+      writeUserInfoCache(userInfo)
     },
 
     /**
