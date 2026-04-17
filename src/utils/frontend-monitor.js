@@ -1,5 +1,5 @@
 import { appConfig } from '../config/app-config'
-import { readCsrfToken } from './browser-storage'
+import { hasAuthSessionHint, readCsrfToken } from './browser-storage'
 import {
   addDocumentEventListener,
   addWindowEventListener,
@@ -22,6 +22,10 @@ let installed = false
 let sending = false
 let flushTimer = null
 let pendingQueue = []
+
+function isAnonymousLoginPage() {
+  return getCurrentPath().startsWith('/login') && !hasAuthSessionHint()
+}
 
 function shouldReport(log) {
   if (!appConfig.frontendMonitorEnabled || !log) return false
@@ -75,6 +79,7 @@ function normalizeReportItem(log) {
 }
 
 function enqueueLog(log) {
+  if (isAnonymousLoginPage()) return
   if (!shouldReport(log)) return
   pendingQueue.push(normalizeReportItem(log))
   const limit = Math.max(20, Number(appConfig.frontendMonitorQueueSize || 100))
@@ -104,6 +109,10 @@ async function sendBatch(logs, keepalive = false) {
 }
 
 export async function flushFrontendMonitorLogs(options = {}) {
+  if (isAnonymousLoginPage()) {
+    pendingQueue = []
+    return false
+  }
   if (!appConfig.frontendMonitorEnabled || sending || pendingQueue.length === 0 || !hasWindow()) {
     return false
   }
