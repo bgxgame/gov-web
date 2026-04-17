@@ -19,6 +19,7 @@ const RETRYABLE_CODES = new Set(['ECONNABORTED', 'ERR_NETWORK', 'ERR_CANCELED'])
 const MAX_RETRY = 2
 const RETRY_DELAY_MS = 800
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
+const FRONTEND_MONITOR_REPORT_PATH = '/system/frontend-monitor/report'
 
 function shouldSilenceErrorMessage(config) {
   return Boolean(config?.silentError)
@@ -27,6 +28,28 @@ function shouldSilenceErrorMessage(config) {
 function resolveCancelKey(config) {
   const raw = String(config?.cancelKey || '').trim()
   return raw || ''
+}
+
+function normalizeUrlPath(url) {
+  if (!url) return ''
+  const raw = String(url).trim()
+  if (!raw) return ''
+  const withoutQuery = raw.split('?')[0] || ''
+  if (!withoutQuery) return ''
+  try {
+    if (withoutQuery.startsWith('http://') || withoutQuery.startsWith('https://')) {
+      const parsed = new URL(withoutQuery)
+      return parsed.pathname || ''
+    }
+  } catch (error) {
+    return withoutQuery
+  }
+  return withoutQuery
+}
+
+function isFrontendMonitorReportRequest(config) {
+  const path = normalizeUrlPath(config?.url)
+  return path.endsWith(FRONTEND_MONITOR_REPORT_PATH)
 }
 
 function cleanupPendingRequest(config) {
@@ -112,17 +135,21 @@ service.interceptors.response.use(
       logger.warn('接口业务失败', { url: requestUrl, code: res.code, msg: res.msg, durationMs, traceId })
       let messageHandled = false
       if (res.code === 401) {
-        clearAuthStorage()
-        if (!redirectedBy401) {
-          redirectedBy401 = true
-          showError(res.msg || '登录已失效，请重新登录')
+        if (isFrontendMonitorReportRequest(response.config)) {
           messageHandled = true
-          if (getLocationObject()?.pathname !== '/login') {
-            replaceLocation('/login')
+        } else {
+          clearAuthStorage()
+          if (!redirectedBy401) {
+            redirectedBy401 = true
+            showError(res.msg || '登录已失效，请重新登录')
+            messageHandled = true
+            if (getLocationObject()?.pathname !== '/login') {
+              replaceLocation('/login')
+            }
+            setRuntimeTimeout(() => {
+              redirectedBy401 = false
+            }, 800)
           }
-          setRuntimeTimeout(() => {
-            redirectedBy401 = false
-          }, 800)
         }
       } else if (!shouldSilenceErrorMessage(response.config)) {
         showError(res.msg || '系统错误')
